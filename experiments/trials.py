@@ -79,4 +79,8 @@ TRIALS = [
  dict(id="G3", parent="T19", name="GrabCut shrink 0.2", change="gc_shrink 0.35 -> 0.2 (sure-FG core eroded less)", why="bigger sure-foreground core anchors the colour model", delta=dict(gc_shrink=0.2)),
  dict(id="G4", parent="T19", name="GrabCut shrink 0.5", change="gc_shrink 0.35 -> 0.5", why="smaller core lets GrabCut correct seeds that overshoot the egg", delta=dict(gc_shrink=0.5)),
  dict(id="G5", parent="T19", name="GrabCut 10 iterations", change="gc_iters 5 -> 10", why="more EM iterations may converge to better colour models", delta=dict(gc_iters=10)),
+ dict(id="F1", parent="T19", name="Combine: GrabCut 10 iters + shrink 0.5", change="gc_iters 10 and gc_shrink 0.5 together (G5 + G4)",
+      why="the two best single-parameter changes from the grid; check they add up", delta=dict(gc_iters=10, gc_shrink=0.5)),
+ dict(id="F2", parent="F1", name="F1 + 20 GrabCut iterations", change="gc_iters 10 -> 20",
+      why="the trend G5 > T19 suggests more iterations may still help; check for saturation", delta=dict(gc_iters=20)),
 ]
