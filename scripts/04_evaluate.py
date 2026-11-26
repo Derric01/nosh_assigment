@@ -68,11 +68,11 @@ bins = np.linspace(0, 1, 11)
 ax[0].hist([dv.iou, ev.iou], bins=bins, label=["dev", "eval"], color=["#9aa5b1", "#d1495b"]); ax[0].set(xlabel="per-image IoU", ylabel="images", title="IoU distribution"); ax[0].legend()
 e = ev.sort_values("iou"); ax[1].bar(range(len(e)), e.iou, color=["#d1495b" if v < 0.5 else "#edae49" if v < 0.8 else "#3b8b5a" for v in e.iou])
 ax[1].set(xlabel="eval images (sorted)", ylabel="IoU", title="Eval IoU per image (red<0.5, amber<0.8)")
-cat = pd.concat([ev, dv]).groupby(["split", "category"]).size().unstack(0).fillna(0)
+cat = pd.concat([ev, dv], ignore_index=True).groupby(["split", "category"]).size().unstack(0).fillna(0)
 cat.plot.barh(ax=ax[2], color=["#9aa5b1", "#d1495b"]); ax[2].set(title="Failure taxonomy (images)", xlabel="images")
 plt.tight_layout(); plt.savefig(f"{OUT}/fig_overview.png", dpi=130); plt.close()
 
-al = pd.concat([ev, dv])
+al = pd.concat([ev, dv], ignore_index=True)
 fig, ax = plt.subplots(1, 4, figsize=(18, 4))
 for a, (x, xl, lg) in zip(ax, [("egg_area", "egg area fraction", True), ("contrast_dE", "egg-vs-surround colour contrast (Lab dE)", False),
                                ("bg_texture", "background texture (Laplacian std)", False), ("egg_sat", "egg mean saturation", False)]):
