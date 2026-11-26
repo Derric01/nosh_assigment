@@ -1,0 +1,5 @@
+SAM benchmark (CPU, 4 cores, 1 image 640x640, official segment-anything, AutomaticMaskGenerator)
+vit_b pps=16: 31.4 s, 12 candidate masks
+vit_b pps=32: 99.0 s, 23 candidate masks
+vit_l: not benchmarked to completion (expected >2x slower; ~2.5-3 h for 110 images) -> dropped
+Chosen: vit_b, pps=16 (~1 h for the dataset)
