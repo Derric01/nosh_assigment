@@ -32,11 +32,12 @@ def load_raw(path):
 
 
 # ---------------- Stage B: egg-likeness filter ----------------
-P = dict(min_area=0.004, max_area=0.75,   # fraction of image area
+P = dict(min_area=0.012, max_area=0.5,   # fraction of image area
          min_solidity=0.93,               # area / convex-hull area  (eggs are convex)
          min_ellipse_iou=0.88,            # how well a fitted ellipse explains the mask
          max_axis_ratio=2.0,              # eggs are not long thin things
          max_sat=60, min_val=100,         # eggs here are white/cream: low mean HSV-S, high mean V (0-255)
+         border_min_area=0.03, border_min_ellipse_iou=0.93,   # border-touching masks must be big and very egg-like
          nms_iou=0.3, contain=0.8)
 
 
@@ -86,6 +87,9 @@ def select_eggs(masks, iou_pred, stab, p=P, rgb=None):
             continue
         if hsv is not None and (hsv[..., 1][m].mean() > p["max_sat"] or hsv[..., 2][m].mean() < p["min_val"]):
             continue                          # skin / leaves / dark objects
+        touches = m[0].any() or m[-1].any() or m[:, 0].any() or m[:, -1].any()
+        if touches and (a < p["border_min_area"] or eiou < p["border_min_ellipse_iou"]):
+            continue                          # slivers of objects cut by the image border
         cands.append((eiou * sol * q, m))
     cands.sort(key=lambda t: -t[0])
     keep = []

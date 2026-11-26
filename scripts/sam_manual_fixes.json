@@ -1,0 +1,185 @@
+{
+ "_doc": "Manual corrections to the automatic SAM egg selection (Task 1). Boxes are [x0,y0,x1,y1] in 640x640 pixels, drawn by eye from the review overlays and fed to SAM as box prompts. 'replace' = discard automatic masks for that image and use only these boxes; 'add' = keep automatic masks and add these; 'remove' = drop automatic masks containing these [x,y] points. 'hull' = replace each prompted mask by its convex hull (eggs are convex; recovers egg pixels hidden behind stems/bars). 'points' = extra positive [x,y] prompts used with every box of that entry. 'union' = all boxes of the entry are parts of ONE egg: their masks are merged before the hull.",
+ "10": {
+  "replace": [
+   [
+    138,
+    285,
+    412,
+    468
+   ],
+   [
+    350,
+    290,
+    416,
+    374
+   ]
+  ],
+  "union": true,
+  "hull": true,
+  "why": "egg partly covered by leaves/stem and visible in two pieces; automatic mask was ragged"
+ },
+ "11": {
+  "replace": [
+   [
+    178,
+    138,
+    396,
+    312
+   ]
+  ],
+  "why": "egg in leaves not found automatically",
+  "hull": true
+ },
+ "12": {
+  "replace": [
+   [
+    238,
+    225,
+    422,
+    452
+   ]
+  ],
+  "why": "egg in leaves not found automatically",
+  "hull": true
+ },
+ "13": {
+  "replace": [
+   [
+    270,
+    155,
+    465,
+    285
+   ]
+  ],
+  "why": "egg in leaves, automatic mask ragged",
+  "hull": true
+ },
+ "117": {
+  "replace": [
+   [
+    250,
+    108,
+    420,
+    285
+   ],
+   [
+    415,
+    140,
+    522,
+    285
+   ]
+  ],
+  "union": true,
+  "hull": true,
+  "why": "white egg in white egg tray, split in two by a bar and a shaded cavity edge; not found automatically"
+ },
+ "123": {
+  "replace": [
+   [
+    210,
+    142,
+    380,
+    305
+   ]
+  ],
+  "why": "white egg on white bag, automatic mask ragged"
+ },
+ "124": {
+  "replace": [
+   [
+    318,
+    215,
+    478,
+    350
+   ]
+  ],
+  "why": "egg in boiling water not found automatically"
+ },
+ "125": {
+  "replace": [
+   [
+    226,
+    218,
+    380,
+    352
+   ]
+  ],
+  "why": "white egg on white bag not found automatically"
+ },
+ "135": {
+  "replace": [
+   [
+    318,
+    248,
+    482,
+    378
+   ]
+  ],
+  "why": "egg in boiling water (image is in Roboflow 'Unlabeled' folder but an egg is visible)"
+ },
+ "145": {
+  "replace": [
+   [
+    283,
+    282,
+    428,
+    398
+   ]
+  ],
+  "why": "egg in boiling water (image is in Roboflow 'Unlabeled' folder but an egg is visible)"
+ },
+ "144": {
+  "add": [
+   [
+    143,
+    3,
+    400,
+    152
+   ]
+  ],
+  "why": "third egg, partly hidden behind the other two, missed automatically"
+ },
+ "16": {
+  "remove": [
+   [
+    125,
+    292
+   ]
+  ],
+  "why": "earphone case wrongly segmented as an egg"
+ },
+ "20": {
+  "replace": [
+   [
+    158,
+    138,
+    342,
+    302
+   ]
+  ],
+  "why": "backlit egg in hand not found automatically"
+ },
+ "24": {
+  "replace": [
+   [
+    152,
+    193,
+    448,
+    398
+   ]
+  ],
+  "why": "backlit egg in hand not found automatically"
+ },
+ "44": {
+  "replace": [
+   [
+    0,
+    62,
+    562,
+    378
+   ]
+  ],
+  "why": "large out-of-focus egg in hand not found automatically"
+ }
+}

@@ -7,3 +7,4 @@ outputs/tracking/*.mp4
 runs/
 outputs/sam_raw/
 outputs/sam_run.log
+outputs/sam_overlays/
