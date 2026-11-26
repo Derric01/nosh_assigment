@@ -1,0 +1,14 @@
+numpy
+scipy
+pandas
+matplotlib
+opencv-python-headless
+scikit-image
+imagehash
+pillow
+tqdm
+markdown
+gdown
+torch
+torchvision
+segment-anything

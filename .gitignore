@@ -1,0 +1,9 @@
+data/
+weights/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+runs/
+outputs/sam_raw/
+outputs/sam_run.log
+outputs/sam_overlays/

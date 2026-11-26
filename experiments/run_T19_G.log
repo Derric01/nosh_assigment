@@ -1,0 +1,6 @@
+ T19 T15 + relaxed fallback (clean re-run)    IoU 0.599 Dice 0.689 BF 0.485 instF1 0.650 count_acc 0.68
+  G1 GrabCut grow 0.6                         IoU 0.587 Dice 0.676 BF 0.470 instF1 0.637 count_acc 0.69
+  G2 GrabCut grow 1.5                         IoU 0.600 Dice 0.690 BF 0.487 instF1 0.637 count_acc 0.67
+  G3 GrabCut shrink 0.2                       IoU 0.598 Dice 0.686 BF 0.491 instF1 0.650 count_acc 0.69
+  G4 GrabCut shrink 0.5                       IoU 0.605 Dice 0.693 BF 0.494 instF1 0.651 count_acc 0.68
+  G5 GrabCut 10 iterations                    IoU 0.615 Dice 0.702 BF 0.517 instF1 0.655 count_acc 0.66

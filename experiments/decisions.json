@@ -1,0 +1,110 @@
+{
+ "T0": {
+  "decision": "reference",
+  "reason": "Baseline, dev IoU 0.319. Failure analysis: (a) a white egg on a bright background merges with it into one huge blob that max_area rejects -> egg missed; (b) hands, tiles, metal pans selected as giant false positives."
+ },
+ "T1": {
+  "decision": "discarded",
+  "reason": "0.287 < 0.319: V=max(R,G,B) brightens coloured backgrounds as well, so more background joins the egg blob."
+ },
+ "T2": {
+  "decision": "discarded alone, reused later",
+  "reason": "0.317 ~ T0 (no gain with a global threshold), but whiteness (V-0.8S) separates white from skin/rug, so it became one of the feature maps pooled in T10 and the video detector."
+ },
+ "T3": {
+  "decision": "discarded",
+  "reason": "0.277, worst of the single-channel thresholds; L* behaves like gray."
+ },
+ "T4": {
+  "decision": "discarded",
+  "reason": "0.162, instance F1 0.039: a local-mean threshold fires on every texture edge and outlines instead of filling the egg."
+ },
+ "T5": {
+  "decision": "kept as a component",
+  "reason": "IoU falls to 0.189 and instance F1 from 0.255 to 0.225 on its own, because rejecting giant blobs leaves nothing in their place. Kept only as a component: every later candidate generator (T6-T8 and the final sweep) needs the shape/size filter to rank candidates."
+ },
+ "T6": {
+  "decision": "discarded as a generator, feature reused",
+  "reason": "0.225: backgrounds with several colours (rug, keyboard, tiles) make 'different from the border' true almost everywhere. The bgdist feature was still useful as one of three maps in T10."
+ },
+ "T7": {
+  "decision": "kept",
+  "reason": "0.420 (+0.10 over T0): sweeping thresholds and scoring components by ellipse-IoU x solidity finds an egg-shaped blob at some level even when no single threshold works. Remaining failures: the sweep ranks egg-shaped non-eggs (foil patch, thumb, cloth corner) above the egg."
+ },
+ "T8": {
+  "decision": "discarded",
+  "reason": "0.200: Canny edges rarely close into one loop around the egg; white-on-white eggs have almost no edge, and textured backgrounds produce many spurious loops."
+ },
+ "T9": {
+  "decision": "kept",
+  "reason": "0.438 (+0.018): requiring a visible colour boundary removes boundary-less shape coincidences."
+ },
+ "T10": {
+  "decision": "kept",
+  "reason": "0.480 (+0.042): the same egg is isolated in different feature maps (gray / whiteness / border distance); pooling candidates and letting NMS pick the best recovers ash and tray eggs."
+ },
+ "T11": {
+  "decision": "discarded",
+  "reason": "0.442 < 0.480, count accuracy fell 0.56 -> 0.30: relaxing solidity/ellipse thresholds admits many non-egg blobs."
+ },
+ "T12": {
+  "decision": "kept",
+  "reason": "0.494 (+0.014): rejecting candidates with mean saturation > 70 removes skin, rugs and orange boxes. This encodes a dataset prior (white/cream eggs) and would fail for brown eggs."
+ },
+ "T13": {
+  "decision": "discarded",
+  "reason": "0.470 < 0.494: stronger blur/morphology merges eggs with neighbouring objects and blunts the boundary; the ash eggs were not fixed."
+ },
+ "T14": {
+  "decision": "kept",
+  "reason": "0.497 (+0.003 IoU, but boundary F1 0.319 -> 0.332 and instance F1 0.485 -> 0.523): preferring larger candidates stops the egg's bright highlight winning over the whole egg."
+ },
+ "T15": {
+  "decision": "kept",
+  "reason": "0.573 (+0.076, boundary F1 0.332 -> 0.472): the largest single gain. GrabCut grows highlight-only detections to the real egg boundary and snaps ragged edges to colour edges."
+ },
+ "T16": {
+  "decision": "discarded",
+  "reason": "0.559 < 0.573: rejecting large GrabCut growth (>2.5x) or non-elliptical results also rejects legitimate growth from small highlights."
+ },
+ "T17": {
+  "decision": "informative only",
+  "reason": "0.588: measured on top of the discarded T16 (fallback effect +0.029 vs T16). Superseded by the clean re-run T19."
+ },
+ "T18": {
+  "decision": "discarded",
+  "reason": "0.587 vs 0.588: the centre prior changes nothing measurable, and would hurt off-centre eggs and the video."
+ },
+ "T19": {
+  "decision": "kept",
+  "reason": "0.599 (+0.026 vs T15): when no candidate passes, relax solidity/ellipse thresholds and keep the best one. Every dataset image contains an egg, so a guess beats an empty mask. Dataset-specific: for video frames with no egg this fallback must be off."
+ },
+ "G1": {
+  "decision": "discarded",
+  "reason": "0.587 < 0.599: a smaller GrabCut search radius prevents small seeds growing to the full egg."
+ },
+ "G2": {
+  "decision": "discarded (neutral)",
+  "reason": "0.600 vs 0.599: no measurable change, larger radius raises leakage risk."
+ },
+ "G3": {
+  "decision": "discarded (neutral)",
+  "reason": "0.598 vs 0.599: no change."
+ },
+ "G4": {
+  "decision": "kept (in F1)",
+  "reason": "0.605 (+0.006): a smaller sure-foreground core lets GrabCut correct seeds that overshoot."
+ },
+ "G5": {
+  "decision": "kept (in F1)",
+  "reason": "0.615 (+0.016, boundary F1 0.485 -> 0.517): more EM iterations improve the colour models."
+ },
+ "F1": {
+  "decision": "FINAL",
+  "reason": "0.618: G4 + G5 combine. Frozen as the final algorithm; this config is the only one evaluated on the eval split."
+ },
+ "F2": {
+  "decision": "discarded",
+  "reason": "0.618 = F1, instance F1 fell 0.666 -> 0.638: iterations have saturated; 2x slower."
+ }
+}

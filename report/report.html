@@ -1,0 +1,669 @@
+<!doctype html><html><head><meta charset='utf-8'><title>Egg segmentation and tracking</title><style>body{font-family:'DejaVu Sans',Arial,sans-serif;font-size:9.6pt;line-height:1.42;color:#1a1a1a}h1{font-size:19pt;margin:0 0 6px}h2{font-size:14pt;border-bottom:2px solid #d1495b;padding-bottom:2px;margin-top:20px;page-break-after:avoid}h3{font-size:11pt;margin-top:12px;page-break-after:avoid}
+table{border-collapse:collapse;margin:8px 0;font-size:7.8pt;width:100%}th,td{border:1px solid #ccc;padding:2px 5px;text-align:left;vertical-align:top}th{background:#f0f0f0}
+img{max-width:100%;display:block;margin:6px auto;page-break-inside:avoid}p>img+img{margin-top:2px}code,pre{font-family:'DejaVu Sans Mono',monospace;font-size:7.6pt;background:#f6f6f6}pre{padding:6px;white-space:pre-wrap}a{color:#1b5fa8}figure img[src*='gallery_worst']{max-width:72%}figure img[src*='fig_groups']{max-width:85%}li{margin-bottom:2px}</style></head><body><h1>Egg segmentation and tracking: CV intern task report</h1>
+<p>Code and instructions: <strong><a href="https://github.com/derric01/nosh_assigment">https://github.com/derric01/nosh_assigment</a></strong>  |  Tracked video (Google Drive): <strong><a href="https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk">https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk</a></strong></p>
+<h2>0. Summary</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dataset</td>
+<td>110 images (640x640), 138 eggs by SAM; 88 dev / 22 eval images, split by scene group to avoid leakage</td>
+</tr>
+<tr>
+<td>Task 1</td>
+<td>SAM ViT-B (automatic mode) + egg filter; 15 of 110 images corrected with hand-drawn box prompts</td>
+</tr>
+<tr>
+<td>Task 2</td>
+<td>classical algorithm (threshold sweep scored by egg shape, GrabCut refinement); dev IoU 0.319 (baseline) -&gt; 0.618 over 27 logged trials</td>
+</tr>
+<tr>
+<td>Task 3 (eval split, SAM as ground truth)</td>
+<td>mean IoU <strong>0.594</strong>, Dice 0.667, boundary F1 0.580, per-egg F1 0.618; 45% of images reach IoU &gt;= 0.8 but 36% fail (IoU &lt; 0.5)</td>
+</tr>
+<tr>
+<td>Task 4</td>
+<td>2 eggs tracked through the egg scene of the video with exactly 2 ids; egg 1 shown in 98% and egg 2 in 70% of the scene frames</td>
+</tr>
+</tbody>
+</table>
+<p>The classical method is a long way from SAM: it is good on contrasting backgrounds and breaks down when the egg has weak contrast with its surroundings.
+Section 4 quantifies this.</p>
+<h2>1. Data and the dev/eval split</h2>
+<p><strong>Data.</strong> The Roboflow export has 110 images, all 640x640 (Roboflow stretched them to square), in a classification-folder layout (train/valid/test, one class): <strong>there are no boxes or masks</strong>.
+Roboflow's own train/valid/test partition is ignored. Eggs are white or cream; 1-3 per image on very different backgrounds (water in a pan, keyboard, rug, ash, leaves, egg tray, hands).
+Two images (135, 145) are in Roboflow's <code>Unlabeled</code> folder; they show an egg in boiling water, so they are treated as egg images.</p>
+<p><strong>Leakage control.</strong> Photos of the same set-up (same rug, bowl, pan, ash, tray ...) look alike, so a random split would let tuning on dev leak into eval.
+Images are therefore grouped by scene similarity and whole groups go to one side: two images are linked if their 256-bit perceptual hashes differ in &lt;= 40 bits,
+<em>or</em> their 16x16 colour thumbnails correlate &gt;= 0.80, <em>or</em> their HSV histograms intersect &gt;= 0.80; linked images are merged (union-find) into <strong>77 groups</strong>
+(sizes: 16, 5, 3, 3, 3, 2, 2, 2 ... ; 64 singletons). Groups were checked by eye (Figure 1). The split takes whole groups into eval until it holds 22 of 110 images
+(first seed that gives exactly 88/22). For comparison, a plain random 22-image split would on average put <strong>8.6 of the 22 eval images into a group that also has members in dev</strong>
+(mean over 300 random splits); here that number is 0. The most similar eval-to-dev pair has thumbnail correlation 0.79, histogram intersection 0.79
+and perceptual-hash distance 94 bits, all on the safe side of the merge thresholds (0.80, 0.80, 40).</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_groups.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 1: example scene groups (each cluster of thumbnails is one group, at most 4 shown; grey border = dev, red border = eval)</figcaption></figure></p>
+<p>The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (<code>experiments/final_config.json</code>, frozen at commit <code>aed2c40c</code>).</p>
+<h2>2. Task 1 - segmentation with a pretrained model (SAM)</h2>
+<p><strong>Method.</strong> The dataset has no prompts, so SAM ViT-B (official <code>segment-anything</code> package, CPU) runs in <em>segment-everything</em> mode (16x16 grid of point prompts, predicted-IoU &gt;= 0.86, stability &gt;= 0.92).
+The candidate masks are cached and then filtered to eggs: area 1.2-50% of the image, solidity &gt;= 0.93, ellipse-fit IoU &gt;= 0.88, axis ratio &lt;= 2, mean HSV saturation &lt;= 60 and brightness &gt;= 100,
+border-touching masks must be &gt;= 3% of the image with ellipse-IoU &gt;= 0.93, and greedy NMS (IoU 0.3 / containment 0.8). The colour thresholds were chosen from the measured gap between the first false positives
+(skin and leaf: saturation 77 and 124) and true eggs (&lt;= 33). Output: one instance-id PNG per image (<code>outputs/sam_masks/</code>).
+Benchmark on one image (4 CPU cores): SAM benchmark (CPU, 4 cores, 1 image 640x640, official segment-anything, AutomaticMaskGenerator)<br>vit_b pps=16: 31.4 s, 12 candidate masks<br>vit_b pps=32: 99.0 s, 23 candidate masks<br>vit_l: not benchmarked to completion (expected &gt;2x slower; ~2.5-3 h for 110 images) -&gt; dropped<br>Chosen: vit_b, pps=16 (~1 h for the dataset).</p>
+<p><strong>Manual corrections (disclosure).</strong> The automatic selection found no egg in 10 of the 110 images and gave ragged or wrong masks in a few others, so 15 images were corrected by giving SAM hand-drawn <strong>box prompts</strong>
+(box coordinates read by eye from the overlays, stored in <code>scripts/sam_manual_fixes.json</code>). For eggs half hidden by leaves or a bar, the convex hull of the prompted mask was used (eggs are convex).
+These 15 images are the hardest ones, so the SAM ground truth there is partly a human judgement.</p>
+<table>
+<thead>
+<tr>
+<th>image</th>
+<th>action</th>
+<th>why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10</td>
+<td>replace</td>
+<td>egg partly covered by leaves/stem and visible in two pieces; automatic mask was ragged</td>
+</tr>
+<tr>
+<td>11</td>
+<td>replace</td>
+<td>egg in leaves not found automatically</td>
+</tr>
+<tr>
+<td>12</td>
+<td>replace</td>
+<td>egg in leaves not found automatically</td>
+</tr>
+<tr>
+<td>13</td>
+<td>replace</td>
+<td>egg in leaves, automatic mask ragged</td>
+</tr>
+<tr>
+<td>117</td>
+<td>replace</td>
+<td>white egg in white egg tray, split in two by a bar and a shaded cavity edge; not found automatically</td>
+</tr>
+<tr>
+<td>123</td>
+<td>replace</td>
+<td>white egg on white bag, automatic mask ragged</td>
+</tr>
+<tr>
+<td>124</td>
+<td>replace</td>
+<td>egg in boiling water not found automatically</td>
+</tr>
+<tr>
+<td>125</td>
+<td>replace</td>
+<td>white egg on white bag not found automatically</td>
+</tr>
+<tr>
+<td>135</td>
+<td>replace</td>
+<td>egg in boiling water (image is in Roboflow 'Unlabeled' folder but an egg is visible)</td>
+</tr>
+<tr>
+<td>145</td>
+<td>replace</td>
+<td>egg in boiling water (image is in Roboflow 'Unlabeled' folder but an egg is visible)</td>
+</tr>
+<tr>
+<td>144</td>
+<td>add</td>
+<td>third egg, partly hidden behind the other two, missed automatically</td>
+</tr>
+<tr>
+<td>16</td>
+<td>remove</td>
+<td>earphone case wrongly segmented as an egg</td>
+</tr>
+<tr>
+<td>20</td>
+<td>replace</td>
+<td>backlit egg in hand not found automatically</td>
+</tr>
+<tr>
+<td>24</td>
+<td>replace</td>
+<td>backlit egg in hand not found automatically</td>
+</tr>
+<tr>
+<td>44</td>
+<td>replace</td>
+<td>large out-of-focus egg in hand not found automatically</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Result.</strong> 138 eggs in 110 images (1 egg: 93 images, 2 eggs: 6, 3 eggs: 11). Figure 2 shows 40 of the 110 results (the full set is in <code>outputs/sam_review_*.jpg</code>).
+Limits: the masks are used as ground truth in Task 3 but are not perfect (e.g. eggs on leaves, backlit eggs, white-on-white boundaries), so every metric below measures <em>agreement with SAM</em>, not with a human annotation.</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/sam_review_0.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 2: SAM masks on images 1-20 (top) and 60-79 (bottom); number = eggs found</figcaption></figure>
+<img alt="" src="figures/sam_review_3.jpg" /></p>
+<h2>3. Task 2 - segmentation with classical image processing</h2>
+<p><strong>Final algorithm</strong> (<code>src/eggseg/classical.py</code>, function <code>segment</code>, config below). Eggs are bright, convex, elliptical and white, but no single threshold isolates them in every image
+(a white egg on a white bag merges with it), so instead of picking one threshold:</p>
+<ol>
+<li>Build three feature maps: gray; <em>whiteness</em> = V - 0.8 S (HSV); and the Lab colour distance to the 3 dominant colours of the image border (background colours).</li>
+<li>Threshold each map at ~34 levels (40..240 step 6); at every level clean with open/close and take every connected component as an <strong>egg candidate</strong>.</li>
+<li>Score each candidate: ellipse-fit IoU x solidity (does it look like an egg?) x boundary contrast (Lab distance between its inside and a 9 px ring around it) x area^0.5 (prefer the whole egg over its highlight);
+   reject candidates larger than 50% of the image, with solidity &lt; 0.9, ellipse-IoU &lt; 0.85, axis ratio &gt; 2.2 or mean saturation &gt; 70.</li>
+<li>Greedy non-maximum suppression keeps the best non-overlapping candidates (one per egg).</li>
+<li><strong>GrabCut</strong> (10 iterations) seeded from each candidate (sure foreground = candidate eroded by 0.5 radius, sure background = farther than 1 radius) moves the boundary to the real egg edge.</li>
+<li>If no candidate passed, repeat with relaxed thresholds (solidity &gt;= 0.8, ellipse-IoU &gt;= 0.7, no colour gate) and keep the single best one (every dataset image has an egg).</li>
+</ol>
+<pre><code>{
+ &quot;max_area&quot;: 0.5,
+ &quot;min_solidity&quot;: 0.9,
+ &quot;min_ellipse_iou&quot;: 0.85,
+ &quot;max_axis_ratio&quot;: 2.2,
+ &quot;cand&quot;: &quot;sweep&quot;,
+ &quot;score&quot;: &quot;shape_contrast&quot;,
+ &quot;sweep_feats&quot;: [
+  &quot;gray&quot;,
+  &quot;whiteness&quot;,
+  &quot;bgdist&quot;
+ ],
+ &quot;max_sat&quot;: 70,
+ &quot;area_w&quot;: 0.5,
+ &quot;grabcut&quot;: true,
+ &quot;fallback&quot;: true,
+ &quot;gc_iters&quot;: 10,
+ &quot;gc_shrink&quot;: 0.5
+}
+</code></pre>
+<p>(all other parameters are the defaults in <code>classical.BASE</code>).</p>
+<p><strong>Experiment log.</strong> 27 trials, all measured on the 88 dev images only, against the SAM masks. Every trial is a config in <code>experiments/trials.py</code>; full parameters, reasoning and the verdict
+of each trial are in <a href="../experiments/LOG.md"><code>experiments/LOG.md</code></a> (generated from <code>results.csv</code>). Metrics: IoU/Dice/BF are means over images (BF = boundary F1 with 3 px tolerance); inst-F1 = per-egg F1 at IoU &gt;= 0.5; count-acc = fraction of images with the right number of eggs.</p>
+<table>
+<thead>
+<tr>
+<th>id</th>
+<th>trial</th>
+<th>IoU</th>
+<th>Dice</th>
+<th>BF</th>
+<th>inst-F1</th>
+<th>count-acc</th>
+<th>decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T0</td>
+<td>Gray + Otsu (baseline)</td>
+<td>0.319</td>
+<td>0.430</td>
+<td>0.200</td>
+<td>0.255</td>
+<td>0.32</td>
+<td>reference</td>
+</tr>
+<tr>
+<td>T1</td>
+<td>HSV-V channel + Otsu</td>
+<td>0.287</td>
+<td>0.388</td>
+<td>0.190</td>
+<td>0.235</td>
+<td>0.33</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T2</td>
+<td>Whiteness (V - 0.8*S) + Otsu</td>
+<td>0.317</td>
+<td>0.427</td>
+<td>0.196</td>
+<td>0.243</td>
+<td>0.33</td>
+<td>discarded alone, reused later</td>
+</tr>
+<tr>
+<td>T3</td>
+<td>Lab L* + Otsu</td>
+<td>0.277</td>
+<td>0.383</td>
+<td>0.171</td>
+<td>0.196</td>
+<td>0.28</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T4</td>
+<td>Adaptive (local mean) threshold</td>
+<td>0.162</td>
+<td>0.256</td>
+<td>0.165</td>
+<td>0.039</td>
+<td>0.01</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T5</td>
+<td>T0 + shape/size filter</td>
+<td>0.189</td>
+<td>0.211</td>
+<td>0.138</td>
+<td>0.225</td>
+<td>0.24</td>
+<td>kept as a component</td>
+</tr>
+<tr>
+<td>T6</td>
+<td>Colour distance from border colours</td>
+<td>0.225</td>
+<td>0.272</td>
+<td>0.141</td>
+<td>0.278</td>
+<td>0.35</td>
+<td>discarded as a generator, feature reused</td>
+</tr>
+<tr>
+<td>T7</td>
+<td>Multi-threshold sweep + shape score (gray)</td>
+<td>0.420</td>
+<td>0.517</td>
+<td>0.265</td>
+<td>0.408</td>
+<td>0.57</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>T8</td>
+<td>Canny edge loops + shape score</td>
+<td>0.200</td>
+<td>0.213</td>
+<td>0.200</td>
+<td>0.207</td>
+<td>0.14</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T9</td>
+<td>T7 + boundary-contrast score</td>
+<td>0.438</td>
+<td>0.535</td>
+<td>0.282</td>
+<td>0.450</td>
+<td>0.57</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>T10</td>
+<td>T9 + pool gray/whiteness/border-distance sweeps</td>
+<td>0.480</td>
+<td>0.581</td>
+<td>0.315</td>
+<td>0.481</td>
+<td>0.56</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>T11</td>
+<td>T10 + relaxed shape thresholds</td>
+<td>0.442</td>
+<td>0.566</td>
+<td>0.288</td>
+<td>0.395</td>
+<td>0.30</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T12</td>
+<td>T10 + white-egg colour gate</td>
+<td>0.494</td>
+<td>0.596</td>
+<td>0.319</td>
+<td>0.485</td>
+<td>0.59</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>T13</td>
+<td>T12 + stronger smoothing</td>
+<td>0.470</td>
+<td>0.570</td>
+<td>0.277</td>
+<td>0.465</td>
+<td>0.53</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T14</td>
+<td>T12 + prefer larger candidates</td>
+<td>0.497</td>
+<td>0.593</td>
+<td>0.332</td>
+<td>0.523</td>
+<td>0.60</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>T15</td>
+<td>T14 + GrabCut refinement</td>
+<td>0.573</td>
+<td>0.652</td>
+<td>0.472</td>
+<td>0.617</td>
+<td>0.59</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>T16</td>
+<td>T15 + GrabCut sanity limits</td>
+<td>0.559</td>
+<td>0.640</td>
+<td>0.458</td>
+<td>0.583</td>
+<td>0.59</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T17</td>
+<td>T16 + relaxed fallback when nothing found</td>
+<td>0.588</td>
+<td>0.678</td>
+<td>0.480</td>
+<td>0.615</td>
+<td>0.66</td>
+<td>informative only</td>
+</tr>
+<tr>
+<td>T18</td>
+<td>T17 + centre prior</td>
+<td>0.587</td>
+<td>0.680</td>
+<td>0.477</td>
+<td>0.606</td>
+<td>0.67</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>T19</td>
+<td>T15 + relaxed fallback (clean re-run)</td>
+<td>0.599</td>
+<td>0.689</td>
+<td>0.485</td>
+<td>0.650</td>
+<td>0.68</td>
+<td>kept</td>
+</tr>
+<tr>
+<td>G1</td>
+<td>GrabCut grow 0.6</td>
+<td>0.587</td>
+<td>0.676</td>
+<td>0.470</td>
+<td>0.637</td>
+<td>0.69</td>
+<td>discarded</td>
+</tr>
+<tr>
+<td>G2</td>
+<td>GrabCut grow 1.5</td>
+<td>0.600</td>
+<td>0.690</td>
+<td>0.487</td>
+<td>0.637</td>
+<td>0.67</td>
+<td>discarded (neutral)</td>
+</tr>
+<tr>
+<td>G3</td>
+<td>GrabCut shrink 0.2</td>
+<td>0.598</td>
+<td>0.686</td>
+<td>0.491</td>
+<td>0.650</td>
+<td>0.69</td>
+<td>discarded (neutral)</td>
+</tr>
+<tr>
+<td>G4</td>
+<td>GrabCut shrink 0.5</td>
+<td>0.605</td>
+<td>0.693</td>
+<td>0.494</td>
+<td>0.651</td>
+<td>0.68</td>
+<td>kept (in F1)</td>
+</tr>
+<tr>
+<td>G5</td>
+<td>GrabCut 10 iterations</td>
+<td>0.615</td>
+<td>0.702</td>
+<td>0.517</td>
+<td>0.655</td>
+<td>0.66</td>
+<td>kept (in F1)</td>
+</tr>
+<tr>
+<td>F1</td>
+<td>Combine: GrabCut 10 iters + shrink 0.5</td>
+<td>0.618</td>
+<td>0.703</td>
+<td>0.512</td>
+<td>0.666</td>
+<td>0.68</td>
+<td>FINAL</td>
+</tr>
+<tr>
+<td>F2</td>
+<td>F1 + 20 GrabCut iterations</td>
+<td>0.618</td>
+<td>0.699</td>
+<td>0.516</td>
+<td>0.638</td>
+<td>0.69</td>
+<td>discarded</td>
+</tr>
+</tbody>
+</table>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_trials.png"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 3: dev IoU of every trial (filled = kept or reused, hollow = discarded)</figcaption></figure></p>
+<p><strong>How the experiments led to the algorithm.</strong></p>
+<ul>
+<li><strong>T0</strong> - Gaussian blur 5, grayscale, global Otsu threshold, open 5 / close 9, every component 0.4%-75% of the image kept. <em>Why:</em> simplest possible classical baseline: eggs are brighter than most backgrounds. <em>Result:</em> Baseline, dev IoU 0.319. Failure analysis: (a) a white egg on a bright background merges with it into one huge blob that max_area rejects -&gt; egg missed; (b) hands, tiles, metal pans selected as giant false positives.</li>
+<li><strong>T1</strong> - feature = V of HSV instead of gray. <em>Why:</em> V is max(R,G,B): keeps white and cream eggs bright even if slightly tinted. <em>Result:</em> 0.287 &lt; 0.319: V=max(R,G,B) brightens coloured backgrounds as well, so more background joins the egg blob.</li>
+<li><strong>T2</strong> - feature = V - 0.8*S (bright AND unsaturated). <em>Why:</em> eggs are white; skin, rugs, bowls are bright but saturated. <em>Result:</em> 0.317 ~ T0 (no gain with a global threshold), but whiteness (V-0.8S) separates white from skin/rug, so it became one of the feature maps pooled in T10 and the video detector.</li>
+<li><strong>T3</strong> - feature = L* of CIELAB. <em>Why:</em> L* is perceptual lightness, less dominated by green than gray. <em>Result:</em> 0.277, worst of the single-channel thresholds; L* behaves like gray.</li>
+<li><strong>T4</strong> - adaptive threshold block 51, C=-8 instead of global Otsu. <em>Why:</em> global threshold fails when background brightness varies; local one only needs the egg to be brighter than its neighbourhood. <em>Result:</em> 0.162, instance F1 0.039: a local-mean threshold fires on every texture edge and outlines instead of filling the egg.</li>
+<li><strong>T5</strong> - keep only components with area &lt;= 50% of image, solidity &gt;= 0.90, ellipse-fit IoU &gt;= 0.85, axis ratio &lt;= 2.2. <em>Why:</em> T0 failures were giant background blobs and hands; eggs are small, convex, elliptical. <em>Result:</em> IoU falls to 0.189 and instance F1 from 0.255 to 0.225 on its own, because rejecting giant blobs leaves nothing in their place. Kept only as a component: every later candidate generator (T6-T8 and the final sweep) needs the shape/size filter to rank candidates.</li>
+<li><strong>T6</strong> - feature = min Lab distance to 3 k-means colour clusters of a 24 px border ring (x3), Otsu, plus T5 shape filter. <em>Why:</em> eggs are usually centred; whatever colours appear on the border are background, so 'unlike the border' = egg. <em>Result:</em> 0.225: backgrounds with several colours (rug, keyboard, tiles) make 'different from the border' true almost everywhere. The bgdist feature was still useful as one of three maps in T10.</li>
+<li><strong>T7</strong> - threshold gray at levels 40..240 step 6; every component at every level is a candidate scored by ellipse-IoU*solidity; greedy NMS. <em>Why:</em> no single threshold separates the egg in every image; some level usually isolates an egg-shaped blob. <em>Result:</em> 0.420 (+0.10 over T0): sweeping thresholds and scoring components by ellipse-IoU x solidity finds an egg-shaped blob at some level even when no single threshold works. Remaining failures: the sweep ranks egg-shaped non-eggs (foil patch, thumb, cloth corner) above the egg.</li>
+<li><strong>T8</strong> - Canny 30/90 on blurred gray, close gaps with 7 px ellipse, fill every closed contour, shape-score, NMS. <em>Why:</em> white eggs on white backgrounds still have a faint closed shadow/edge outline that thresholds cannot see. <em>Result:</em> 0.200: Canny edges rarely close into one loop around the egg; white-on-white eggs have almost no edge, and textured backgrounds produce many spurious loops.</li>
+<li><strong>T9</strong> - candidate score = ellipse-IoU*solidity * min(dE,40)/40, dE = Lab distance between mean colour inside and in a 9 px ring outside. <em>Why:</em> T7 picked egg-shaped blobs with no real boundary (foil patch, cloth corner, thumb); a real egg differs from its surroundings. <em>Result:</em> 0.438 (+0.018): requiring a visible colour boundary removes boundary-less shape coincidences.</li>
+<li><strong>T10</strong> - run the sweep on three feature maps (gray, whiteness, bgdist) and pool all candidates before NMS. <em>Why:</em> eggs that are not brighter than the background (ash, tray) may still stand out in whiteness or colour-vs-border. <em>Result:</em> 0.480 (+0.042): the same egg is isolated in different feature maps (gray / whiteness / border distance); pooling candidates and letting NMS pick the best recovers ash and tray eggs.</li>
+<li><strong>T11</strong> - min solidity 0.90-&gt;0.85, min ellipse-IoU 0.85-&gt;0.80, axis ratio 2.2-&gt;2.5. <em>Why:</em> textured/occluded eggs give ragged masks that fail the strict filter. <em>Result:</em> 0.442 &lt; 0.480, count accuracy fell 0.56 -&gt; 0.30: relaxing solidity/ellipse thresholds admits many non-egg blobs.</li>
+<li><strong>T12</strong> - reject candidates whose mean HSV saturation &gt; 70 (0-255). <em>Why:</em> eggs here are white/cream; coloured blobs (skin, rug, orange box) should lose. <em>Result:</em> 0.494 (+0.014): rejecting candidates with mean saturation &gt; 70 removes skin, rugs and orange boxes. This encodes a dataset prior (white/cream eggs) and would fail for brown eggs.</li>
+<li><strong>T13</strong> - Gaussian blur 5 -&gt; 11 and open/close 5/9 -&gt; 7/15. <em>Why:</em> textured ash eggs fragment under thresholding; blurring merges the texture into one blob. <em>Result:</em> 0.470 &lt; 0.494: stronger blur/morphology merges eggs with neighbouring objects and blunts the boundary; the ash eggs were not fixed.</li>
+<li><strong>T14</strong> - score *= area_fraction ** 0.5. <em>Why:</em> the sweep often returns the bright highlight of an egg (small, very egg-shaped) instead of the whole egg. <em>Result:</em> 0.497 (+0.003 IoU, but boundary F1 0.319 -&gt; 0.332 and instance F1 0.485 -&gt; 0.523): preferring larger candidates stops the egg's bright highlight winning over the whole egg.</li>
+<li><strong>T15</strong> - GrabCut (5 iters) seeded from each selected candidate: sure-FG = candidate eroded 0.35 r, sure-BG = beyond 1.0 r from it. <em>Why:</em> partial detections (egg highlights) should grow to the real egg boundary; ragged edges should snap to colour edges. <em>Result:</em> 0.573 (+0.076, boundary F1 0.332 -&gt; 0.472): the largest single gain. GrabCut grows highlight-only detections to the real egg boundary and snaps ragged edges to colour edges.</li>
+<li><strong>T16</strong> - fall back to the un-refined candidate if GrabCut result is &gt; 2.5x the seed area or its ellipse-IoU &lt; 0.80. <em>Why:</em> in T15 GrabCut sometimes flooded the background (huge false positives) when the seed was wrong or the background was similar. <em>Result:</em> 0.559 &lt; 0.573: rejecting large GrabCut growth (&gt;2.5x) or non-elliptical results also rejects legitimate growth from small highlights.</li>
+<li><strong>T17</strong> - if no candidate passes, rerun with solidity &gt;= 0.80, ellipse-IoU &gt;= 0.70, no colour gate and keep the single best. <em>Why:</em> every image has &gt;= 1 egg; complete misses (IoU 0) cost far more than a wrong guess. <em>Result:</em> 0.588: measured on top of the discarded T16 (fallback effect +0.029 vs T16). Superseded by the clean re-run T19.</li>
+<li><strong>T18</strong> - candidate score <em>= exp(-d^2 / (2</em>0.5^2)), d = distance of its centroid from the image centre (normalised). <em>Why:</em> eggs are photographed roughly centred; off-centre blobs (bag corners, cloth) are usually distractors. <em>Result:</em> 0.587 vs 0.588: the centre prior changes nothing measurable, and would hurt off-centre eggs and the video.</li>
+<li><strong>T19</strong> - fallback = True on top of T15 (T16's GrabCut limits and T18's centre prior are NOT included). <em>Why:</em> T17 measured the fallback on top of the discarded T16; this isolates its effect on the kept pipeline. <em>Result:</em> 0.599 (+0.026 vs T15): when no candidate passes, relax solidity/ellipse thresholds and keep the best one. Every dataset image contains an egg, so a guess beats an empty mask. Dataset-specific: for video frames with no egg this fallback must be off.</li>
+<li><strong>G1</strong> - gc_grow 1.0 -&gt; 0.6. <em>Why:</em> smaller search radius = less leakage into background. <em>Result:</em> 0.587 &lt; 0.599: a smaller GrabCut search radius prevents small seeds growing to the full egg.</li>
+<li><strong>G2</strong> - gc_grow 1.0 -&gt; 1.5. <em>Why:</em> larger radius lets tiny highlight seeds grow to the whole egg. <em>Result:</em> 0.600 vs 0.599: no measurable change, larger radius raises leakage risk.</li>
+<li><strong>G3</strong> - gc_shrink 0.35 -&gt; 0.2 (sure-FG core eroded less). <em>Why:</em> bigger sure-foreground core anchors the colour model. <em>Result:</em> 0.598 vs 0.599: no change.</li>
+<li><strong>G4</strong> - gc_shrink 0.35 -&gt; 0.5. <em>Why:</em> smaller core lets GrabCut correct seeds that overshoot the egg. <em>Result:</em> 0.605 (+0.006): a smaller sure-foreground core lets GrabCut correct seeds that overshoot.</li>
+<li><strong>G5</strong> - gc_iters 5 -&gt; 10. <em>Why:</em> more EM iterations may converge to better colour models. <em>Result:</em> 0.615 (+0.016, boundary F1 0.485 -&gt; 0.517): more EM iterations improve the colour models.</li>
+<li><strong>F1</strong> - gc_iters 10 and gc_shrink 0.5 together (G5 + G4). <em>Why:</em> the two best single-parameter changes from the grid; check they add up. <em>Result:</em> 0.618: G4 + G5 combine. Frozen as the final algorithm; this config is the only one evaluated on the eval split.</li>
+<li><strong>F2</strong> - gc_iters 10 -&gt; 20. <em>Why:</em> the trend G5 &gt; T19 suggests more iterations may still help; check for saturation. <em>Result:</em> 0.618 = F1, instance F1 fell 0.666 -&gt; 0.638: iterations have saturated; 2x slower.</li>
+</ul>
+<p><em>In short:</em> global thresholds (T0-T4) cannot separate a white egg from a bright background, they either merge them or pick the dim table reflection/background instead. Moving from "one threshold" to "many thresholds, choose the most egg-shaped component" (T7) was the first real gain;
+then every addition fixed a specific failure seen in the dev error overlays: wrong egg-shaped blobs (contrast, T9), eggs invisible in one feature map (pooling, T10), skin/rugs (colour gate, T12), highlights instead of whole eggs (area prior, T14) and rough boundaries/partial eggs (GrabCut, T15, the biggest gain);
+the fallback (T19) removed empty results. Unsuccessful attempts that were kept in the log on purpose: HSV-V and L* thresholds, adaptive threshold, border-colour distance as the only generator, Canny loops, relaxed shape thresholds, more smoothing, limiting GrabCut, a centre prior.</p>
+<h2>4. Task 3 - evaluation and analysis</h2>
+<p>Ground truth = SAM masks (Task 1), prediction = final classical algorithm, <strong>eval split (22 images, evaluated once)</strong>; dev numbers are shown for reference.
+Definitions: <em>semantic</em> metrics merge all eggs into one foreground mask (IoU = TP/(TP+FP+FN), Dice, pixel precision/recall); <em>boundary F1</em> counts an edge pixel as correct if a GT edge pixel is within 3 px (and vice versa), HD95 is the 95th-percentile
+edge-to-edge distance; <em>per-egg</em> metrics match predicted and GT eggs one-to-one (Hungarian) and count a match when IoU &gt;= 0.5. Images with no egg in both masks would score 1; none occur here.</p>
+<table>
+<thead>
+<tr>
+<th>metric</th>
+<th>eval (22 images, held out)</th>
+<th>dev (88 images, used for tuning)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IoU (mean per image)</td>
+<td>0.594</td>
+<td>0.619</td>
+</tr>
+<tr>
+<td>IoU (median)</td>
+<td>0.724</td>
+<td>0.687</td>
+</tr>
+<tr>
+<td>Dice</td>
+<td>0.667</td>
+<td>0.704</td>
+</tr>
+<tr>
+<td>pixel precision</td>
+<td>0.729</td>
+<td>0.751</td>
+</tr>
+<tr>
+<td>pixel recall</td>
+<td>0.684</td>
+<td>0.750</td>
+</tr>
+<tr>
+<td>boundary F1 (3 px)</td>
+<td>0.580</td>
+<td>0.516</td>
+</tr>
+<tr>
+<td>HD95 (px, mean)</td>
+<td>118.6</td>
+<td>123.9</td>
+</tr>
+<tr>
+<td>per-egg precision (IoU&gt;=0.5)</td>
+<td>0.587</td>
+<td>0.641</td>
+</tr>
+<tr>
+<td>per-egg recall</td>
+<td>0.697</td>
+<td>0.739</td>
+</tr>
+<tr>
+<td>per-egg F1</td>
+<td>0.618</td>
+<td>0.667</td>
+</tr>
+<tr>
+<td>mean IoU of matched eggs</td>
+<td>0.815</td>
+<td>0.843</td>
+</tr>
+<tr>
+<td>micro IoU (pooled pixels)</td>
+<td>0.472</td>
+<td>0.538</td>
+</tr>
+<tr>
+<td>images with IoU &gt;= 0.5</td>
+<td>64%</td>
+<td>70%</td>
+</tr>
+<tr>
+<td>images with IoU &gt;= 0.8</td>
+<td>45%</td>
+<td>39%</td>
+</tr>
+<tr>
+<td>right egg count</td>
+<td>73%</td>
+<td>68%</td>
+</tr>
+</tbody>
+</table>
+<p>Eval and dev agree within sampling noise (22 images is a small sample; the eval per-image IoU standard deviation is 0.37), so tuning on dev did not obviously overfit.
+The distribution is <strong>bimodal</strong> (Figure 4): 45% of eval images are good (IoU &gt;= 0.8, matched-egg IoU 0.81) while 36% fail badly, so the mean (0.594) hides two very different regimes.</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_overview.png"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 4: IoU distribution, per-image eval IoU and failure taxonomy</figcaption></figure></p>
+<h3>Qualitative evaluation: the eight worst eval images</h3>
+<p>Columns: image | SAM (ground truth) | classical prediction | error map (green = correct, red = false positive, blue = missed egg).</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/gallery_worst_a.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 5a: worst 4 eval images (images 30, 24, 20, 160)</figcaption></figure>
+<figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/gallery_worst_b.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 5b: next 4 worst eval images (images 143, 3, 31, 140)</figcaption></figure></p>
+<p>What went wrong (matching the rows of Figure 5):</p>
+<ul>
+<li><strong>Low contrast egg on a bright background (images 30, 143, 3, 31):</strong> a white egg on a white wall/bag/cloth/bowl. The sweep does not find the whole egg: either the egg merges with the background (image 30: the prediction is the white paper), or only its brightest part is found (143, 3, 31: the shaded half of the egg is missed, 'under-segmented').
+  A likely reason why GrabCut does not recover the shaded half is that its colour is closer to the background than to the lit half (not verified separately).</li>
+<li><strong>Dark egg on a bright background (images 24, 20, backlit hand-held eggs):</strong> the method assumes <em>bright egg</em>; here the egg is darker than the wall, so the prediction is a patch of bright wall (0 IoU).</li>
+<li><strong>Skin-coloured surroundings (image 160):</strong> the predicted region covers the palm instead of the egg ('leak into background'); a pale palm has low saturation, so the white-egg colour gate does not reject it.</li>
+<li><strong>Large flat objects (image 140):</strong> a large grey region (the metal plate) is predicted as an egg, probably because a smooth, bright, convex region passes the shape test after GrabCut rounds it off; the lowest egg also merges with the table.</li>
+</ul>
+<p>Best cases for contrast (egg on a contrasting, smooth surface, IoU 0.97+):</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/gallery_best.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 6: best 3 eval images</figcaption></figure></p>
+<h3>Quantitative error analysis (all 110 images pooled, descriptive only)</h3>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_iou_vs_factors.png"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 7: IoU against egg size and contrast, background texture and egg saturation (red = eval, grey = dev)</figcaption></figure>
+<figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_errors.png"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 8: error pixels, IoU by egg count, egg-count confusion matrix</figcaption></figure></p>
+<ul>
+<li><strong>Over-segmentation dominates.</strong> False-positive pixels outnumber missed pixels 2.7:1 on eval (1.8:1 pooled); pixel precision 0.73 vs recall 0.68. GrabCut and the relaxed fallback grow into the background more often than they miss egg pixels.</li>
+<li><strong>Contrast is the strongest factor.</strong> Mean IoU is 0.43 (n=43) vs 0.73 (n=67) for images where the egg differs from its surroundings by Lab dE &lt; 60 vs &gt;= 60 (Figure 7, second panel).</li>
+<li><strong>Small eggs are harder:</strong> egg area &lt; 5% of the image: 0.45 (n=14) vs 0.64 (n=96).</li>
+<li><strong>Saturated (non-white) eggs fail:</strong> egg mean saturation &gt;= 40 (brown/pinkish, backlit): 0.20 (n=5) vs 0.63 (n=105) - these are rejected by the white-egg colour gate, which is a deliberate dataset prior and the reason this method would not transfer to brown eggs.</li>
+<li><strong>The hard images are hard for SAM too:</strong> the 15 images that needed manual SAM prompts: 0.45 (n=15) vs 0.64 (n=95).</li>
+<li><strong>Wrong object beats no object.</strong> 18 of 110 images have IoU &lt; 0.2, but only 2 of them have an empty prediction: the relaxed fallback and the candidate scoring usually pick a <em>wrong</em> region (Figure 5), which is worse than a miss for any downstream use.</li>
+<li><strong>Counting:</strong> the right egg count in 73% of eval images. In single-egg images (93 of 110) the method predicts more than one egg in 24 cases (26%), i.e. spurious extra eggs (Figure 8, right); in the 17 multi-egg images the count is right for 9.
+  Multi-egg images score higher (IoU 0.70 vs 0.60 for single-egg); in the galleries they are mostly on contrasting surfaces such as a marble counter or water in a pan (an observation, not tested).</li>
+<li><strong>Boundaries:</strong> where an egg is found, the boundary is decent (matched-egg IoU 0.81, boundary F1 0.58), but HD95 is 119 px on average because the failures are far away from the egg.</li>
+</ul>
+<h3>Where the algorithm should be improved</h3>
+<ol>
+<li><strong>Remove the bright-egg assumption</strong>: also sweep inverted feature maps (dark egg on a bright wall) and let the contrast/shape score decide (images 24, 20).</li>
+<li><strong>Shading-aware egg model</strong>: a lit egg has a smooth, monotone brightness gradient and a shadow side. Fitting an ellipse to <em>both</em> the lit part and the adjacent shaded part (e.g. an ellipse-constrained GrabCut, or growing the candidate along smooth gradients) would fix the half-egg failures (143, 3, 31).</li>
+<li><strong>Constrain GrabCut</strong>: after refinement fit an ellipse and fall back (or intersect with the dilated ellipse) if the mask leaves it; T16 showed that a crude size limit hurts, so the constraint should be shape-based, not size-based.</li>
+<li><strong>Explicit skin and large-object rejection</strong>: a skin detector in YCrCb and a limit on candidate size relative to the <em>median</em> candidate would stop the hand/plate leaks (160, 140).</li>
+<li><strong>Learn the candidate score</strong>: the current score is a hand-weighted product; a small classifier (logistic regression / gradient-boosted trees on the shape, contrast, colour and position features already computed here) trained on the dev candidates, labelled by IoU with SAM, would weight them properly while staying classical.</li>
+<li><strong>Count prior</strong>: penalise a 2nd/3rd egg unless it is also well supported (the 24/93 spurious second eggs).</li>
+<li><strong>Better ground truth</strong>: some SAM masks are themselves uncertain (leaves, backlit); a second pretrained model or manual review of the eval images would give a more trustworthy upper bound.</li>
+</ol>
+<h2>5. Task 4 - video tracking</h2>
+<p><strong>Video.</strong> Screen recording of a 59 s clip (1912x1074, 30 fps, 1779 frames) of two white eggs on a dark table which a hand touches and spins. Only frames ~177-1150 show the eggs; the rest are title/text cards and the YouTube interface with a recommended-videos grid
+(whose egg thumbnails would otherwise create false tracks).</p>
+<p><strong>Pipeline</strong> (<code>scripts/05_track_video.py</code>, <code>src/eggseg/tracking.py</code>).</p>
+<ol>
+<li><em>Scene gate:</em> a frame is processed only if &gt; 25% of its lower half is dark brown (the table); this selects exactly frames 177-1150 as one run.</li>
+<li><em>Segmentation (adapted from Task 2):</em> frame resized to 640x360; the <em>whiteness</em> feature thresholded at a <strong>fixed</strong> value of 200, open/close, then the same shape filter (solidity &gt;= 0.9, ellipse-IoU &gt;= 0.85, axis ratio &lt;= 2.2). The two Task-2 features that were switched off: Otsu (it picked the dim table
+   reflections under the eggs and missed the eggs: observed on frames 323-484, so it was replaced by a fixed threshold) and the sweep/GrabCut stages (a 16x slower sweep variant was tried and gave almost the same number of two-egg frames, 224 vs 220 of 323 sampled, so it was dropped).</li>
+<li><em>Tracking (SORT-style):</em> every egg is a track with a constant-velocity <strong>Kalman filter</strong> over its box (centre, width, height). Per frame: predict all tracks; cost = 0.5 (1 - IoU) + 0.5 x distance/gate between predicted boxes and detections;
+   <strong>Hungarian</strong> assignment; matched tracks are corrected, unmatched detections start tentative tracks (confirmed after 8 detections), unmatched tracks coast on the prediction for 20 frames (shown as 'predicted').</li>
+<li><em>Re-identification:</em> the first version lost identities whenever the hand covered an egg for more than 20 frames (6 ids for 2 eggs); the presenter also moves eggs while they are hidden (one egg reappears ~0.5 frame widths away).
+   Lost tracks are therefore remembered for 900 frames and a new track that reaches confirmation <em>inherits the id of the nearest lost track</em> (position + size) within 0.7 frame widths. This brought the result to exactly 2 ids.</li>
+</ol>
+<p><strong>Result.</strong> Output: <code>outputs/tracking/tracked.mp4</code> (masks, ids, 45-frame trails) uploaded to Google Drive: <strong><a href="https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk">https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk</a></strong>; per-frame boxes in <code>outputs/tracking/tracks.csv</code>.
+In the egg scene (frames 177-1150, 974 frames) egg 1 is shown in 98% of frames (detected in 96%), egg 2 in 70% (detected in 66%); both are shown in 70% of the frames. Total ids created: 2 for 2 eggs.</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/tracking_frames.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 9: tracked frames (250, 480, 520, 606 / 700, 830, 920, 1100)</figcaption></figure>
+<figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_track_timeline.png"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 10: when each id is detected (dark) or predicted (light)</figcaption></figure></p>
+<p><strong>Limitations.</strong></p>
+<ul>
+<li><em>Egg 2 is the spinning egg:</em> it is blurred and often under the hand, so it is missed for ~34% of the scene frames (frame 920 is an example of a visible but undetected egg). After 20 frames without a detection a track stops being drawn until the egg is re-found.</li>
+<li><em>Identity after occlusion is a best guess:</em> the two eggs look the same, so when both are hidden or an egg is moved while hidden the id can only be assigned from position and size. It happens to stay consistent in this clip, but there is no appearance cue to prove it (frames 500-850 are the critical part).</li>
+<li><em>No tracking ground truth exists,</em> so no MOTA/IDF1 is reported; the numbers above are coverage and id counts, checked by watching the video.</li>
+<li>The detector is tuned for white eggs on a dark table (fixed threshold, scene gate); it is not the general Task-2 algorithm.</li>
+</ul>
+<p><strong>Segmentation check against SAM on 20 sampled egg-scene frames.</strong> With SAM masks (same egg filter as Task 1) as proxy ground truth, the video detector reaches mean IoU 0.73, Dice 0.83, boundary F1 0.69, per-egg F1 0.88.
+SAM itself is not reliable on this video: it also segments the <strong>table reflections under the eggs</strong> as eggs (blue regions in Figure 11), finding more than 2 eggs in 6 of 20 frames. These reflections are SAM errors, but they lower the scores above (recall 0.73, precision 1.00: the detector never predicts anything SAM does not).
+In the 11 of 20 frames where both find the same number of eggs the mean IoU is 0.88. This is a sanity check on mask quality, not a benchmark; the frames where an egg is under the hand (e.g. 790-890) are missed by both SAM-as-filtered and the detector.</p>
+<p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/video_vs_sam.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 11: video detector vs SAM on sampled frames (green = agree, red = detector only, blue = SAM only)</figcaption></figure></p>
+<h2>6. Reproducing the results</h2>
+<p>See the README (<a href="https://github.com/derric01/nosh_assigment">https://github.com/derric01/nosh_assigment</a>): environment, data download and the numbered scripts (<code>scripts/01_run_sam.py</code> ... <code>scripts/08_build_report.py</code>), with expected CPU run times. Everything ran on 4 CPU cores without a GPU.</p>
+<h2>7. Use of AI tools</h2>
+<p>This work was done with Claude Code (Anthropic's AI coding assistant): it planned the work (<code>PLAN.md</code>), wrote the code, ran the experiments and drafted this report. All numbers, tables and figures in this report are produced by the scripts in the repository
+(the experiment log and the report tables are generated from <code>results.csv</code>, <code>summary.json</code> and the per-image CSVs), and the keep/discard reasoning of each trial (<code>experiments/decisions.json</code>) was written after the trial's result had been measured.
+Judgement calls that were made along the way and are disclosed above: the manual box-prompt corrections of 15 SAM masks, the dataset-specific priors (white eggs, at least one egg per image), the decision to treat the two <code>Unlabeled</code> images as egg images, and the video-specific scene gate.</p></body></html>
