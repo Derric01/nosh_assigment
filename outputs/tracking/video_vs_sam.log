@@ -1,1 +1,7 @@
 190 IoU 0.64  gt eggs 3  pred eggs 2
+240 IoU 0.51  gt eggs 4  pred eggs 2
+290 IoU 0.90  gt eggs 2  pred eggs 2
+340 IoU 0.90  gt eggs 2  pred eggs 2
+390 IoU 0.52  gt eggs 4  pred eggs 2
+440 IoU 0.66  gt eggs 3  pred eggs 2
+490 IoU 0.86  gt eggs 2  pred eggs 2

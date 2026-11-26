@@ -2,7 +2,6 @@ data/
 weights/
 __pycache__/
 *.pyc
-outputs/tracking/*.mp4
 .ipynb_checkpoints/
 runs/
 outputs/sam_raw/
