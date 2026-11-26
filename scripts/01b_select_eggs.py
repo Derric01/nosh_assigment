@@ -8,6 +8,8 @@ os.makedirs(data.SAM_DIR, exist_ok=True); os.makedirs("outputs/sam_overlays", ex
 paths, tiles, counts = data.list_images(), [], {}
 for p in paths:
     n = data.stem(p)
+    if not os.path.exists(f"outputs/sam_raw/{n}.npz"):
+        continue          # SAM stage A has not reached this image yet
     rgb = data.load_rgb(p)
     masks, iou, stab = sam_seg.load_raw(f"outputs/sam_raw/{n}.npz")
     keep = sam_seg.select_eggs(masks, iou, stab)
