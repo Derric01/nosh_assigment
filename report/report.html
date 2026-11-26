@@ -47,7 +47,7 @@ Images are therefore grouped by scene similarity and whole groups go to one side
 (mean over 300 random splits); here that number is 0. The most similar eval-to-dev pair has thumbnail correlation 0.79, histogram intersection 0.79
 and perceptual-hash distance 94 bits, all on the safe side of the merge thresholds (0.80, 0.80, 40).</p>
 <p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_groups.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 1: example scene groups (each cluster of thumbnails is one group, at most 4 shown; grey border = dev, red border = eval)</figcaption></figure></p>
-<p>The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (<code>experiments/final_config.json</code>, frozen at commit <code>aed2c40c</code>).</p>
+<p>The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (<code>experiments/final_config.json</code>, committed in <code>f16afde</code> before the eval split was run; its parent commit is <code>aed2c40c</code>).</p>
 <h2>2. Task 1 - segmentation with a pretrained model (SAM)</h2>
 <p><strong>Method.</strong> The dataset has no prompts, so SAM ViT-B (official <code>segment-anything</code> package, CPU) runs in <em>segment-everything</em> mode (16x16 grid of point prompts, predicted-IoU &gt;= 0.86, stability &gt;= 0.92).
 The candidate masks are cached and then filtered to eggs: area 1.2-50% of the image, solidity &gt;= 0.93, ellipse-fit IoU &gt;= 0.88, axis ratio &lt;= 2, mean HSV saturation &lt;= 60 and brightness &gt;= 100,

@@ -32,7 +32,7 @@ and perceptual-hash distance 94 bits, all on the safe side of the merge threshol
 
 ![Figure 1: example scene groups (each cluster of thumbnails is one group, at most 4 shown; grey border = dev, red border = eval)](figures/fig_groups.jpg)
 
-The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (`experiments/final_config.json`, frozen at commit `aed2c40c`).
+The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (`experiments/final_config.json`, committed in `f16afde` before the eval split was run; its parent commit is `aed2c40c`).
 
 ## 2. Task 1 - segmentation with a pretrained model (SAM)
 
