@@ -1,1 +1,2 @@
  T19 T15 + relaxed fallback (clean re-run)    IoU 0.599 Dice 0.689 BF 0.485 instF1 0.650 count_acc 0.68
+  G1 GrabCut grow 0.6                         IoU 0.587 Dice 0.676 BF 0.470 instF1 0.637 count_acc 0.69
