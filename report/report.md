@@ -291,5 +291,6 @@ The manual choices (hand-drawn box prompts for 15 SAM masks; the white-egg and a
 
 **Author:** Derric01 (GitHub). This report and repository are the author's submission for the CV intern task. The author directed the work, supplied the tracking video, and is responsible for the submission.
 
-**Background (as stated by the author):** prior hands-on experience with image annotation and with training YOLO models. This experience was **not** used in this project: the dataset comes without annotations, the ground truth is SAM output, and no neural network was trained here. It is mentioned for context only.
+**Background (as stated by the author):** prior hands-on experience with image annotation, with training YOLO models and with SAM (Segment Anything Model).
+Of these, only SAM is used in this project (Task 1). Annotation and YOLO training were not: the dataset comes without annotations and no neural network was trained here; they are mentioned for context only.
 A YOLO model trained on annotated eggs is the natural learned counterpart to the classical method and would be the first thing to try next, in the spirit of improvement idea 5 in Section 4 (learning the decision instead of hand-weighting it).
