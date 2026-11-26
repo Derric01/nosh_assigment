@@ -70,4 +70,13 @@ TRIALS = [
       change="candidate score *= exp(-d^2 / (2*0.5^2)), d = distance of its centroid from the image centre (normalised)",
       why="eggs are photographed roughly centred; off-centre blobs (bag corners, cloth) are usually distractors",
       delta=dict(center_sigma=0.5)),
+ dict(id="T19", parent="T15", name="T15 + relaxed fallback (clean re-run)",
+      change="fallback = True on top of T15 (T16's GrabCut limits and T18's centre prior are NOT included)",
+      why="T17 measured the fallback on top of the discarded T16; this isolates its effect on the kept pipeline",
+      delta=dict(fallback=True)),
+ dict(id="G1", parent="T19", name="GrabCut grow 0.6", change="gc_grow 1.0 -> 0.6", why="smaller search radius = less leakage into background", delta=dict(gc_grow=0.6)),
+ dict(id="G2", parent="T19", name="GrabCut grow 1.5", change="gc_grow 1.0 -> 1.5", why="larger radius lets tiny highlight seeds grow to the whole egg", delta=dict(gc_grow=1.5)),
+ dict(id="G3", parent="T19", name="GrabCut shrink 0.2", change="gc_shrink 0.35 -> 0.2 (sure-FG core eroded less)", why="bigger sure-foreground core anchors the colour model", delta=dict(gc_shrink=0.2)),
+ dict(id="G4", parent="T19", name="GrabCut shrink 0.5", change="gc_shrink 0.35 -> 0.5", why="smaller core lets GrabCut correct seeds that overshoot the egg", delta=dict(gc_shrink=0.5)),
+ dict(id="G5", parent="T19", name="GrabCut 10 iterations", change="gc_iters 5 -> 10", why="more EM iterations may converge to better colour models", delta=dict(gc_iters=10)),
 ]

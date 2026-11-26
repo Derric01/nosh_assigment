@@ -1,0 +1,1 @@
+ T19 T15 + relaxed fallback (clean re-run)    IoU 0.599 Dice 0.689 BF 0.485 instF1 0.650 count_acc 0.68
