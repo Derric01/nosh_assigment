@@ -274,6 +274,14 @@ This work was done with Claude Code (Anthropic's AI coding assistant): it planne
 (the experiment log and the report tables are generated from `results.csv`, `summary.json` and the per-image CSVs), and the keep/discard reasoning of each trial (`experiments/decisions.json`) was written after the trial's result had been measured.
 Judgement calls that were made along the way and are disclosed above: the manual box-prompt corrections of {len(FIX)} SAM masks, the dataset-specific priors (white eggs, at least one egg per image), the decision to treat the two `Unlabeled` images as egg images, and the video-specific scene gate.
 """
+md += """
+## 8. Author and credit
+
+**Author:** Derric01 (GitHub). This report and repository are the author's submission for the CV intern task. The author directed the work, supplied the tracking video, and is responsible for the submission.
+
+**Background (as stated by the author):** prior hands-on experience with image annotation and with training YOLO models. This experience was **not** used in this project: the dataset comes without annotations, the ground truth is SAM output, and no neural network was trained here. It is mentioned for context only.
+A YOLO model trained on annotated eggs is the natural learned counterpart to the classical method and would be the first thing to try next, in the spirit of improvement idea 5 in Section 4 (learning the decision instead of hand-weighting it).
+"""
 open("report/report.md", "w").write(md)
 css = """body{font-family:'DejaVu Sans',Arial,sans-serif;font-size:9.6pt;line-height:1.42;color:#1a1a1a}h1{font-size:19pt;margin:0 0 6px}h2{font-size:14pt;border-bottom:2px solid #d1495b;padding-bottom:2px;margin-top:20px;page-break-after:avoid}h3{font-size:11pt;margin-top:12px;page-break-after:avoid}
 table{border-collapse:collapse;margin:8px 0;font-size:7.8pt;width:100%}th,td{border:1px solid #ccc;padding:2px 5px;text-align:left;vertical-align:top}th{background:#f0f0f0}
