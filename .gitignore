@@ -5,3 +5,5 @@ __pycache__/
 outputs/tracking/*.mp4
 .ipynb_checkpoints/
 runs/
+outputs/sam_raw/
+outputs/sam_run.log
