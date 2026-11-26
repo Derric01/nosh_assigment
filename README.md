@@ -74,7 +74,4 @@ candidate) then moves the boundary onto the real egg edge; if nothing passed, a 
 Code: `src/eggseg/classical.py` (`segment`), config in `experiments/final_config.json`.
 
 ## Where AI tools were used
-This project was developed with Claude Code:  wrote the code, ran the
-experiments and drafted the report text. All numbers in the report are produced by the scripts in this repository (tables and logs are generated
-from `results.csv` / `summary.json`, not typed by hand). Judgement calls made during the work are stated in the report:
-the manual box-prompt corrections of 15 SAM masks, and the dataset-specific priors (white eggs, at least one egg per image).
+Claude Code (an AI coding assistant) helped write the code, run the experiments and draft the report, under the author's direction. Numbers in the report come from the scripts in this repository.
