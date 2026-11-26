@@ -28,8 +28,10 @@ BASE = dict(
     sweep_lo=40, sweep_hi=240, sweep_step=6,         # cand='sweep'
     canny_lo=30, canny_hi=90, edge_close=7,          # cand='edges'
     nms_iou=0.3, contain=0.8,
+    gc_grow=1.0, gc_shrink=0.35, gc_iters=5,         # grabcut=True: seeds from the candidate mask
     sweep_feats=None,                                # list of feature names to pool; default [feat]
     score="shape", contrast_w=1.0, ring=9,           # 'shape' or 'shape_contrast'
+    area_w=0.0,                                      # score *= area_fraction ** area_w  (prefer whole egg over its highlight)
     max_sat=0,                                       # >0: reject candidates whose mean HSV-S exceeds this
 )
 
@@ -123,7 +125,7 @@ def _score(c, cfg, ctx=None):
     sol, eiou, ax = egg_shape_stats(c)
     if sol < cfg["min_solidity"] or eiou < cfg["min_ellipse_iou"] or ax > cfg["max_axis_ratio"]:
         return None
-    sc = eiou * sol
+    sc = eiou * sol * (a ** cfg["area_w"])
     if ctx is not None:
         if cfg["max_sat"] and ctx["hsv"][..., 1][c].mean() > cfg["max_sat"]:
             return None                                     # not white-ish
@@ -180,6 +182,29 @@ def edge_candidates(gray, cfg):
     return out
 
 
+def grabcut_refine(rgb, m, cfg):
+    """Let GrabCut (colour GMMs + graph cut) grow/trim a candidate to the real egg boundary.
+    sure-FG = candidate eroded, sure-BG = everything farther than `gc_grow` radii away."""
+    r = max(int(np.sqrt(m.sum() / np.pi)), 3)                     # equivalent radius of the candidate
+    mu = m.astype(np.uint8)
+    k = lambda d: cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * max(int(d), 1) + 1,) * 2)
+    gc = np.full(m.shape, cv2.GC_PR_BGD, np.uint8)
+    gc[cv2.dilate(mu, k(cfg["gc_grow"] * r)) == 0] = cv2.GC_BGD
+    gc[mu > 0] = cv2.GC_PR_FGD
+    gc[cv2.erode(mu, k(cfg["gc_shrink"] * r)) > 0] = cv2.GC_FGD
+    bgd, fgd = np.zeros((1, 65)), np.zeros((1, 65))
+    try:
+        cv2.grabCut(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), gc, None, bgd, fgd, cfg["gc_iters"], cv2.GC_INIT_WITH_MASK)
+    except cv2.error:
+        return m
+    out = np.isin(gc, (cv2.GC_FGD, cv2.GC_PR_FGD)).astype(np.uint8)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(out, connectivity=8)
+    if n < 2:
+        return m
+    out = _fill((lab == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8))
+    return out if out.sum() > 0.3 * m.sum() else m                   # reject a collapsed result
+
+
 def segment(rgb, cfg=None):
     cfg = {**BASE, **(cfg or {})}
     f = feature_map(rgb, cfg)
@@ -199,6 +224,8 @@ def segment(rgb, cfg=None):
             comps = comps[: cfg["keep_best"]]
     else:
         raise ValueError(cfg["cand"])
+    if cfg["grabcut"]:
+        comps = nms([(1.0, grabcut_refine(rgb, c, cfg)) for c in comps], cfg)
     comps.sort(key=lambda c: -c.sum())
     inst = np.zeros(rgb.shape[:2], np.uint8)
     for i, c in enumerate(comps, 1):
