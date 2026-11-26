@@ -1,7 +1,7 @@
 <!doctype html><html><head><meta charset='utf-8'><title>Egg segmentation and tracking</title><style>body{font-family:'DejaVu Sans',Arial,sans-serif;font-size:9.6pt;line-height:1.42;color:#1a1a1a}h1{font-size:19pt;margin:0 0 6px}h2{font-size:14pt;border-bottom:2px solid #d1495b;padding-bottom:2px;margin-top:20px;page-break-after:avoid}h3{font-size:11pt;margin-top:12px;page-break-after:avoid}
 table{border-collapse:collapse;margin:8px 0;font-size:7.8pt;width:100%}th,td{border:1px solid #ccc;padding:2px 5px;text-align:left;vertical-align:top}th{background:#f0f0f0}
 img{max-width:100%;display:block;margin:6px auto;page-break-inside:avoid}p>img+img{margin-top:2px}code,pre{font-family:'DejaVu Sans Mono',monospace;font-size:7.6pt;background:#f6f6f6}pre{padding:6px;white-space:pre-wrap}a{color:#1b5fa8}figure img[src*='gallery_worst']{max-width:72%}figure img[src*='fig_groups']{max-width:85%}li{margin-bottom:2px}</style></head><body><h1>Egg segmentation and tracking: CV intern task report</h1>
-<p>Code and instructions: <strong><a href="https://github.com/derric01/nosh_assigment">https://github.com/derric01/nosh_assigment</a></strong>  |  Tracked video (Google Drive): <strong>LINK TO BE ADDED</strong></p>
+<p>Code and instructions: <strong><a href="https://github.com/derric01/nosh_assigment">https://github.com/derric01/nosh_assigment</a></strong>  |  Tracked video (Google Drive): <strong><a href="https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk">https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk</a></strong></p>
 <h2>0. Summary</h2>
 <table>
 <thead>
@@ -646,7 +646,7 @@ The distribution is <strong>bimodal</strong> (Figure 4): 45% of eval images are 
 <li><em>Re-identification:</em> the first version lost identities whenever the hand covered an egg for more than 20 frames (6 ids for 2 eggs); the presenter also moves eggs while they are hidden (one egg reappears ~0.5 frame widths away).
    Lost tracks are therefore remembered for 900 frames and a new track that reaches confirmation <em>inherits the id of the nearest lost track</em> (position + size) within 0.7 frame widths. This brought the result to exactly 2 ids.</li>
 </ol>
-<p><strong>Result.</strong> Output: <code>outputs/tracking/tracked.mp4</code> (masks, ids, 45-frame trails) uploaded to Google Drive: <strong>LINK TO BE ADDED</strong>; per-frame boxes in <code>outputs/tracking/tracks.csv</code>.
+<p><strong>Result.</strong> Output: <code>outputs/tracking/tracked.mp4</code> (masks, ids, 45-frame trails) uploaded to Google Drive: <strong><a href="https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk">https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk</a></strong>; per-frame boxes in <code>outputs/tracking/tracks.csv</code>.
 In the egg scene (frames 177-1150, 974 frames) egg 1 is shown in 98% of frames (detected in 96%), egg 2 in 70% (detected in 66%); both are shown in 70% of the frames. Total ids created: 2 for 2 eggs.</p>
 <p><figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/tracking_frames.jpg"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 9: tracked frames (250, 480, 520, 606 / 700, 830, 920, 1100)</figcaption></figure>
 <figure style="margin:6px 0;page-break-inside:avoid"><img src="figures/fig_track_timeline.png"><figcaption style="font-size:8pt;color:#555;text-align:center">Figure 10: when each id is detected (dark) or predicted (light)</figcaption></figure></p>

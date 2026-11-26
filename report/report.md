@@ -1,7 +1,7 @@
 
 # Egg segmentation and tracking: CV intern task report
 
-Code and instructions: **[https://github.com/derric01/nosh_assigment](https://github.com/derric01/nosh_assigment)**  |  Tracked video (Google Drive): **LINK TO BE ADDED**
+Code and instructions: **[https://github.com/derric01/nosh_assigment](https://github.com/derric01/nosh_assigment)**  |  Tracked video (Google Drive): **[https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk](https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk)**
 
 ## 0. Summary
 
@@ -261,7 +261,7 @@ Best cases for contrast (egg on a contrasting, smooth surface, IoU 0.97+):
 4. *Re-identification:* the first version lost identities whenever the hand covered an egg for more than 20 frames (6 ids for 2 eggs); the presenter also moves eggs while they are hidden (one egg reappears ~0.5 frame widths away).
    Lost tracks are therefore remembered for 900 frames and a new track that reaches confirmation *inherits the id of the nearest lost track* (position + size) within 0.7 frame widths. This brought the result to exactly 2 ids.
 
-**Result.** Output: `outputs/tracking/tracked.mp4` (masks, ids, 45-frame trails) uploaded to Google Drive: **LINK TO BE ADDED**; per-frame boxes in `outputs/tracking/tracks.csv`.
+**Result.** Output: `outputs/tracking/tracked.mp4` (masks, ids, 45-frame trails) uploaded to Google Drive: **[https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk](https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk)**; per-frame boxes in `outputs/tracking/tracks.csv`.
 In the egg scene (frames 177-1150, 974 frames) egg 1 is shown in 98% of frames (detected in 96%), egg 2 in 70% (detected in 66%); both are shown in 70% of the frames. Total ids created: 2 for 2 eggs.
 
 ![Figure 9: tracked frames (250, 480, 520, 606 / 700, 830, 920, 1100)](figures/tracking_frames.jpg)

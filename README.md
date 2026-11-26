@@ -4,6 +4,7 @@ Segment eggs with a pretrained model (SAM), build a classical image-processing s
 evaluate the gap, and track individual eggs in a video.
 
 **Report (PDF): [`report/report.pdf`](report/report.pdf)** - all four tasks, the experiment log, the analysis and the link to the tracked video.
+Tracked video (Google Drive, public): https://drive.google.com/file/d/1majh-sPgpO1AUofLZXiiyqViPrLVvGd-/view?usp=drivesdk
 Full trial-by-trial log: [`experiments/LOG.md`](experiments/LOG.md).
 
 ## Results at a glance
