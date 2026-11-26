@@ -41,6 +41,11 @@ data/, outputs/large    gitignored (keep SAM masks small PNGs committed if total
 ```
 
 ## 2. Task 1 — SAM pseudo-ground-truth
+0. **GATE — inspect before building anything.** Write `data/NOTES.md`: image count, resolutions,
+   annotation format, eggs/image, egg colours, backgrounds, whether images look like video frames or
+   Roboflow augmentations. Also inspect the tracking video as soon as it is available (scene, #eggs,
+   touching eggs, motion, lighting) — Task 2 design must keep it in mind, not discover it at the end.
+   Adjust the rest of this plan to what the data shows.
 1. Inspect the export: count images, resolution, whether annotations exist (COCO json / YOLO txt boxes /
    polygons), number of eggs per image, egg colours (white/brown), backgrounds.
 2. Prompting strategy (SAM needs prompts):
@@ -50,10 +55,15 @@ data/, outputs/large    gitignored (keep SAM masks small PNGs committed if total
      egg-likeness: ellipse-fit residual, solidity > 0.9, area range, aspect ratio 1–1.8, mean brightness/
      low saturation; NMS on overlaps. Use this for images without boxes and report agreement with the
      box-prompted variant on a subset.
-3. Pick model size by measured CPU speed (target < ~5 s/img; `sam_b` if `sam_l` too slow). Resize long
+   - Because the brief says the model should *identify* eggs, report how well the box-free automatic
+     variant recovers the egg instances (recall vs dataset boxes). Open-vocabulary detectors
+     (YOLO-World/GroundingDINO) need CLIP/HF downloads that are blocked here — mention, don't rely on.
+3. **Benchmark first:** time 5 images each with `mobile_sam`, `sam_b`, `sam_l`, then pick
+   model size by measured CPU speed (target < ~5 s/img; `sam_b` if `sam_l` too slow). Resize long
    side to 1024 as SAM does internally anyway.
 4. Post-process: keep largest component per instance, fill holes. Save instance-ID PNGs + overlay grid
-   (like the brief's red-egg example). Manually spot-check ~30 overlays; note any SAM failures in report.
+   (like the brief's red-egg example). Commit the masks so later steps never require re-running SAM.
+   Manually spot-check ~30 overlays; note any SAM failures in report.
 
 ## 3. Task 2 — split + classical algorithm
 ### Split (4:1, leakage-aware)
@@ -76,6 +86,10 @@ Planned trial sequence (keep honest results incl. failures):
 - T6 instance split: distance transform + watershed for touching eggs.
 - T7 alternatives expected to be weaker (log anyway): Canny + Hough/ellipse fitting, k-means in Lab,
   adaptive threshold, skin-colour removal.
+- The trial list above is a hypothesis: order the real trials by the failures actually observed on dev
+  (look at dev error overlays after each trial).
+- Work at a fixed working resolution (e.g. long side 640–800) for speed; upsample masks to native
+  resolution for metrics.
 - Small grid/random search on key params (thresholds, kernel sizes, min area) on dev only.
 - `experiments/results.csv` + `experiments/LOG.md`: for every trial — what changed, why, params,
   dev metrics, kept/discarded + reason. Include a plot of dev mIoU across trials (progression chart).
@@ -85,6 +99,8 @@ Planned trial sequence (keep honest results incl. failures):
   plus micro (pooled-pixel) values.
 - Boundary: Boundary F1 (tolerance ~2–3 px at native res) and HD95.
 - Instance: Hungarian matching at IoU ≥ 0.5 → instance precision/recall/F1, count error, mean matched IoU.
+- Define edge cases: images with no egg in GT and/or prediction (IoU = 1 if both empty, 0 if one
+  empty; report count of such images separately). Note that SAM "GT" has its own errors.
 - Breakdowns: by #eggs, egg colour, egg area fraction, image brightness/contrast, background type.
 - Plots: IoU histogram/CDF, IoU vs. egg size / brightness scatter, FP vs FN pixel bars, per-trial chart.
 - Qualitative: worst-k (e.g. 8) eval images with error overlays (TP green, FP red, FN blue), a few
@@ -98,6 +114,10 @@ Planned trial sequence (keep honest results incl. failures):
   gating, `max_age`, `min_hits`; optionally mask IoU instead of box IoU. Stable colour per ID.
 - Output: `outputs/tracking/tracked.mp4` (mask overlay + ID labels + trails) + `tracks.csv`. Report
   ID-switch observations and track-count timeline. User uploads mp4 to Google Drive; put link in report.
+- No tracking GT exists: evaluate with proxies — run SAM on ~20 sampled frames and score the per-frame
+  segmentation against it; report #tracks vs visible eggs over time, track-length distribution, and
+  manually counted ID switches on sampled clips.
+- Expect domain shift vs. the image dataset; adapt parameters if needed and document what changed and why.
 - Optional comparison: SAM on a few keyframes to sanity-check the classical masks in the video.
 
 ## 6. Report (report/report.pdf, committed)
@@ -114,3 +134,14 @@ Reproduction instructions · AI-tool disclosure. Build via markdown → HTML →
 5. Eval + analysis figures.
 6. Video tracking (once mp4 available).
 7. Report PDF + README. Final review that every brief bullet is covered.
+
+## 8. Guardrails (from plan review)
+- **Never invent numbers.** Every metric in the log/report comes from a script run; `experiments/LOG.md`
+  tables are generated from `experiments/results.csv`. Failed trials are recorded as they happened.
+- **Eval split is used once**, after the final config is frozen (record the commit hash in the report).
+- **Keep code simple and explainable** — the candidate must walk through it and modify it live in the
+  interview. Plain functions, one params dict, short modules, comments on *why*; no needless abstraction.
+- Fixed seeds everywhere; README lists exact commands in order with expected runtimes on CPU.
+- Keep the repo small: no dataset, no weights, no large videos in git (tracked video goes to Drive;
+  commit only a short GIF/screenshots).
+- If CPU time becomes a bottleneck (large dataset / long video), subsample and say so explicitly.
