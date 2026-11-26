@@ -28,6 +28,9 @@ BASE = dict(
     sweep_lo=40, sweep_hi=240, sweep_step=6,         # cand='sweep'
     canny_lo=30, canny_hi=90, edge_close=7,          # cand='edges'
     nms_iou=0.3, contain=0.8,
+    gc_max_growth=0.0, gc_min_ellipse=0.0,           # sanity limits on the GrabCut result (0 = off)
+    fallback=False, fb_solidity=0.80, fb_ellipse=0.70,   # if nothing passes, relax the filter and keep the best
+    center_sigma=0.0,                                # >0: score *= gaussian of distance from image centre
     gc_grow=1.0, gc_shrink=0.35, gc_iters=5,         # grabcut=True: seeds from the candidate mask
     sweep_feats=None,                                # list of feature names to pool; default [feat]
     score="shape", contrast_w=1.0, ring=9,           # 'shape' or 'shape_contrast'
@@ -126,6 +129,10 @@ def _score(c, cfg, ctx=None):
     if sol < cfg["min_solidity"] or eiou < cfg["min_ellipse_iou"] or ax > cfg["max_axis_ratio"]:
         return None
     sc = eiou * sol * (a ** cfg["area_w"])
+    if cfg["center_sigma"]:
+        ys, xs = np.nonzero(c)
+        d2 = ((xs.mean() / c.shape[1] - 0.5) ** 2 + (ys.mean() / c.shape[0] - 0.5) ** 2)
+        sc *= np.exp(-d2 / (2 * cfg["center_sigma"] ** 2))
     if ctx is not None:
         if cfg["max_sat"] and ctx["hsv"][..., 1][c].mean() > cfg["max_sat"]:
             return None                                     # not white-ish
@@ -202,28 +209,39 @@ def grabcut_refine(rgb, m, cfg):
     if n < 2:
         return m
     out = _fill((lab == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8))
-    return out if out.sum() > 0.3 * m.sum() else m                   # reject a collapsed result
+    if out.sum() < 0.3 * m.sum():                                    # collapsed result
+        return m
+    if cfg["gc_max_growth"] and out.sum() > cfg["gc_max_growth"] * m.sum():   # leaked into the background
+        return m
+    if cfg["gc_min_ellipse"] and egg_shape_stats(out)[1] < cfg["gc_min_ellipse"]:  # no longer egg-shaped
+        return m
+    return out
 
 
-def segment(rgb, cfg=None):
-    cfg = {**BASE, **(cfg or {})}
+def _candidates(rgb, cfg):
+    """Stage 1-5: generate egg candidates with the generator chosen by cfg['cand']."""
     f = feature_map(rgb, cfg)
     if cfg["cand"] == "thresh":
-        comps = components(morph(threshold(f, cfg), cfg), cfg)
-    elif cfg["cand"] == "sweep":
+        return components(morph(threshold(f, cfg), cfg), cfg)
+    if cfg["cand"] == "sweep":
         ctx = dict(lab=cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32), hsv=cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV))
         cands = []
         for ft in (cfg["sweep_feats"] or [cfg["feat"]]):    # pool candidates from several feature maps
             cands += sweep_candidates(feature_map(rgb, {**cfg, "feat": ft}), cfg, ctx)
         comps = nms(cands, cfg)
-        if cfg["keep_best"]:
-            comps = comps[: cfg["keep_best"]]
     elif cfg["cand"] == "edges":
         comps = nms(edge_candidates(f, cfg), cfg)
-        if cfg["keep_best"]:
-            comps = comps[: cfg["keep_best"]]
     else:
         raise ValueError(cfg["cand"])
+    return comps[: cfg["keep_best"]] if cfg["keep_best"] else comps
+
+
+def segment(rgb, cfg=None):
+    cfg = {**BASE, **(cfg or {})}
+    comps = _candidates(rgb, cfg)
+    if not comps and cfg["fallback"]:        # dataset prior: every image has >= 1 egg -> relax and keep the best
+        comps = _candidates(rgb, {**cfg, "min_solidity": cfg["fb_solidity"], "min_ellipse_iou": cfg["fb_ellipse"],
+                                  "max_sat": 0, "keep_best": 1})
     if cfg["grabcut"]:
         comps = nms([(1.0, grabcut_refine(rgb, c, cfg)) for c in comps], cfg)
     comps.sort(key=lambda c: -c.sum())
