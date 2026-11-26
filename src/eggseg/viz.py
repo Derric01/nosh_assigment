@@ -36,3 +36,12 @@ def sheet(tiles, ncols, size=256):
         tiles.append(np.full_like(tiles[0], 255))
     rows = [np.hstack(tiles[i:i + ncols]) for i in range(0, len(tiles), ncols)]
     return np.vstack(rows)
+
+
+def error_overlay(rgb, gt, pr, alpha=0.6):
+    """TP green, FP red, FN blue (foreground = any egg)."""
+    g, p = gt > 0, pr > 0
+    out = rgb.astype(np.float32).copy()
+    for m, col in (((g & p), (0, 200, 0)), ((~g & p), (255, 0, 0)), ((g & ~p), (0, 80, 255))):
+        out[m] = (1 - alpha) * out[m] + alpha * np.array(col, np.float32)
+    return out.astype(np.uint8)
