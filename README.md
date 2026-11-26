@@ -7,12 +7,12 @@ evaluate the gap, and track individual eggs in a video.
 Full trial-by-trial log: [`experiments/LOG.md`](experiments/LOG.md).
 
 ## Results at a glance
-Numbers below are generated from `outputs/eval/summary.json` (classical algorithm F1 vs SAM masks used as ground truth).
+Numbers below are generated from `outputs/eval/summary.json` (final classical algorithm, trial F1, scored against the SAM masks used as ground truth).
 
 | split | images | mean IoU | Dice | boundary F1 | per-egg F1 | right egg count |
 |---|---|---|---|---|---|---|
-| dev (used for tuning) | 88 | see report | | | | |
-| **eval (held out, evaluated once)** | 22 | see report | | | | |
+| dev (used for tuning) | 88 | 0.619 | 0.704 | 0.516 | 0.667 | 68% |
+| **eval (held out, evaluated once)** | 22 | **0.594** | 0.667 | 0.580 | 0.618 | 73% |
 
 (The table in the report is authoritative; this README only describes how to reproduce it.)
 
@@ -33,6 +33,8 @@ Python 3.10+, CPU is enough (everything here was run on 4 CPU cores, no GPU).
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
+For the PDF report only (step 11): `npm install playwright && npx playwright install chromium` (the report is rendered to PDF with headless Chromium).
+
 Data and weights (not committed):
 ```bash
 # dataset (Roboflow export, 110 images) from the Drive link in the task PDF

@@ -24,19 +24,22 @@ def md_table(df):
 
 # ---------- figures made here ----------
 def groups_figure():
-    cap = G.groupby("group").size(); multi = cap[cap > 1].index[:10]
+    cap = G.groupby("group").size(); multi = cap[cap > 1].index[:12]
     by = {data.stem(p): p for p in data.list_images()}
-    rows = []
+    cells = []
     for g in multi:
-        names = G[G.group == g].name.tolist()[:6]; sp = G[G.group == g].split.iloc[0]
+        names = G[G.group == g].name.tolist()[:4]; sp = G[G.group == g].split.iloc[0]
         tiles = []
         for n in names:
-            im = cv2.resize(cv2.imread(by[n]), (110, 110)); col = (60, 60, 210) if sp == "eval" else (150, 150, 150)
-            tiles.append(cv2.copyMakeBorder(im, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=col))
-        while len(tiles) < 6: tiles.append(np.full_like(tiles[0], 255))
-        rows.append(np.hstack(tiles))
+            im = cv2.resize(cv2.imread(by[n]), (80, 80)); col = (60, 60, 210) if sp == "eval" else (150, 150, 150)
+            tiles.append(cv2.copyMakeBorder(im, 3, 3, 3, 3, cv2.BORDER_CONSTANT, value=col))
+        while len(tiles) < 4: tiles.append(np.full_like(tiles[0], 255))
+        cells.append(np.hstack(tiles))
+    rows = [np.hstack(cells[k:k + 3] + [np.full_like(cells[0], 255)] * (3 - len(cells[k:k + 3]))) for k in range(0, len(cells), 3)]
     cv2.imwrite("report/figures/fig_groups.jpg", np.vstack(rows))
 groups_figure()
+_g = cv2.imread("outputs/eval/gallery_worst.jpg"); h = _g.shape[0] // 2
+cv2.imwrite("report/figures/gallery_worst_a.jpg", _g[:h]); cv2.imwrite("report/figures/gallery_worst_b.jpg", _g[h:])
 for src, dst in [("outputs/sam_review_0.jpg", "sam_review_0.jpg"), ("outputs/sam_review_3.jpg", "sam_review_3.jpg"), ("outputs/eval/fig_trials.png", "fig_trials.png"),
                  ("outputs/eval/fig_overview.png", "fig_overview.png"), ("outputs/eval/fig_iou_vs_factors.png", "fig_iou_vs_factors.png"),
                  ("outputs/eval/fig_errors.png", "fig_errors.png"), ("outputs/eval/gallery_worst.jpg", "gallery_worst.jpg"), ("outputs/eval/gallery_best.jpg", "gallery_best.jpg"),
@@ -114,7 +117,7 @@ Images are therefore grouped by scene similarity and whole groups go to one side
 (mean over 300 random splits); here that number is 0. The most similar eval-to-dev pair has thumbnail correlation {ev_g.x_thumb.max():.2f}, histogram intersection {ev_g.x_hist.max():.2f}
 and perceptual-hash distance {int(ev_g.x_phash.min())} bits, all on the safe side of the merge thresholds (0.80, 0.80, 40).
 
-![Figure 1: example scene groups (each row is one group, grey border = dev, red border = eval)](figures/fig_groups.jpg)
+![Figure 1: example scene groups (each cluster of thumbnails is one group, at most 4 shown; grey border = dev, red border = eval)](figures/fig_groups.jpg)
 
 The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (`experiments/final_config.json`, frozen at commit `{FIN['frozen_at_parent_commit'][:8]}`).
 
@@ -187,7 +190,8 @@ The distribution is **bimodal** (Figure 4): {E['frac_iou_ge_0_8']:.0%} of eval i
 ### Qualitative evaluation: the eight worst eval images
 Columns: image | SAM (ground truth) | classical prediction | error map (green = correct, red = false positive, blue = missed egg).
 
-![Figure 5: worst 8 eval images](figures/gallery_worst.jpg)
+![Figure 5a: worst 4 eval images (images 30, 24, 20, 160)](figures/gallery_worst_a.jpg)
+![Figure 5b: next 4 worst eval images (images 143, 3, 31, 140)](figures/gallery_worst_b.jpg)
 
 What went wrong (matching the rows of Figure 5):
 
@@ -231,6 +235,7 @@ Best cases for contrast (egg on a contrasting, smooth surface, IoU 0.97+):
 (whose egg thumbnails would otherwise create false tracks).
 
 **Pipeline** (`scripts/05_track_video.py`, `src/eggseg/tracking.py`).
+
 1. *Scene gate:* a frame is processed only if > 25% of its lower half is dark brown (the table); this selects exactly frames 177-1150 as one run.
 2. *Segmentation (adapted from Task 2):* frame resized to 640x360; the *whiteness* feature thresholded at a **fixed** value of 200, open/close, then the same shape filter (solidity >= 0.9, ellipse-IoU >= 0.85, axis ratio <= 2.2). The two Task-2 features that were switched off: Otsu (it picked the dim table
    reflections under the eggs and missed the eggs: observed on frames 323-484, so it was replaced by a fixed threshold) and the sweep/GrabCut stages (a 16x slower sweep variant was tried and gave almost the same number of two-egg frames, 224 vs 220 of 323 sampled, so it was dropped).
@@ -246,6 +251,7 @@ In the egg scene (frames 177-1150, {len(scene)} frames) egg 1 is shown in {cov[1
 ![Figure 10: when each id is detected (dark) or predicted (light)](figures/fig_track_timeline.png)
 
 **Limitations.**
+
 - *Egg 2 is the spinning egg:* it is blurred and often under the hand, so it is missed for ~{1 - cov[2][1]:.0%} of the scene frames (frame 920 is an example of a visible but undetected egg). After 20 frames without a detection a track stops being drawn until the egg is re-found.
 - *Identity after occlusion is a best guess:* the two eggs look the same, so when both are hidden or an egg is moved while hidden the id can only be assigned from position and size. It happens to stay consistent in this clip, but there is no appearance cue to prove it (frames 500-850 are the critical part).
 - *No tracking ground truth exists,* so no MOTA/IDF1 is reported; the numbers above are coverage and id counts, checked by watching the video.
@@ -254,7 +260,8 @@ In the egg scene (frames 177-1150, {len(scene)} frames) egg 1 is shown in {cov[1
 if V is not None:
     md += f"""
 **Segmentation check against SAM on {len(V)} sampled egg-scene frames.** With SAM masks (same egg filter as Task 1) as proxy ground truth, the video detector reaches mean IoU {V.iou.mean():.2f}, Dice {V.dice.mean():.2f}, boundary F1 {V.bf.mean():.2f}, per-egg F1 {V.inst_f1.mean():.2f}.
-SAM itself is not reliable on this video (it also segments the table reflections and often finds more than 2 eggs: {int((V.n_gt > 2).sum())} of {len(V)} frames), so this is a sanity check, not a benchmark.
+SAM itself is not reliable on this video: it also segments the **table reflections under the eggs** as eggs (blue regions in Figure 11), finding more than 2 eggs in {int((V.n_gt > 2).sum())} of {len(V)} frames. These reflections are SAM errors, but they lower the scores above (recall {V.rec.mean():.2f}, precision {V.prec.mean():.2f}: the detector never predicts anything SAM does not).
+In the {int((V.n_gt == V.n_pred).sum())} of {len(V)} frames where both find the same number of eggs the mean IoU is {V.iou[V.n_gt == V.n_pred].mean():.2f}. This is a sanity check on mask quality, not a benchmark; the frames where an egg is under the hand (e.g. 790-890) are missed by both SAM-as-filtered and the detector.
 
 ![Figure 11: video detector vs SAM on sampled frames (green = agree, red = detector only, blue = SAM only)](figures/video_vs_sam.jpg)
 """
@@ -270,7 +277,7 @@ Judgement calls that were made along the way and are disclosed above: the manual
 open("report/report.md", "w").write(md)
 css = """body{font-family:'DejaVu Sans',Arial,sans-serif;font-size:9.6pt;line-height:1.42;color:#1a1a1a}h1{font-size:19pt;margin:0 0 6px}h2{font-size:14pt;border-bottom:2px solid #d1495b;padding-bottom:2px;margin-top:20px;page-break-after:avoid}h3{font-size:11pt;margin-top:12px;page-break-after:avoid}
 table{border-collapse:collapse;margin:8px 0;font-size:7.8pt;width:100%}th,td{border:1px solid #ccc;padding:2px 5px;text-align:left;vertical-align:top}th{background:#f0f0f0}
-img{max-width:100%;display:block;margin:6px auto;page-break-inside:avoid}p>img+img{margin-top:2px}code,pre{font-family:'DejaVu Sans Mono',monospace;font-size:7.6pt;background:#f6f6f6}pre{padding:6px;white-space:pre-wrap}a{color:#1b5fa8}li{margin-bottom:2px}"""
+img{max-width:100%;display:block;margin:6px auto;page-break-inside:avoid}p>img+img{margin-top:2px}code,pre{font-family:'DejaVu Sans Mono',monospace;font-size:7.6pt;background:#f6f6f6}pre{padding:6px;white-space:pre-wrap}a{color:#1b5fa8}figure img[src*='gallery_worst']{max-width:72%}figure img[src*='fig_groups']{max-width:85%}li{margin-bottom:2px}"""
 html = markdown.markdown(md, extensions=["tables", "fenced_code"])
 # figure captions: turn "alt text" of images starting with 'Figure' into captions
 html = re.sub(r'<img alt="(Figure[^"]*)" src="([^"]+)" />', r'<figure style="margin:6px 0;page-break-inside:avoid"><img src="\2"><figcaption style="font-size:8pt;color:#555;text-align:center">\1</figcaption></figure>', html)

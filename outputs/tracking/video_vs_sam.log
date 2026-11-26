@@ -6,3 +6,16 @@
 440 IoU 0.66  gt eggs 3  pred eggs 2
 490 IoU 0.86  gt eggs 2  pred eggs 2
 540 IoU 0.89  gt eggs 1  pred eggs 1
+590 IoU 0.90  gt eggs 1  pred eggs 1
+640 IoU 0.89  gt eggs 2  pred eggs 2
+690 IoU 0.88  gt eggs 2  pred eggs 2
+740 IoU 0.90  gt eggs 1  pred eggs 1
+790 IoU 0.51  gt eggs 2  pred eggs 1
+840 IoU 0.42  gt eggs 2  pred eggs 1
+890 IoU 0.48  gt eggs 2  pred eggs 1
+940 IoU 0.61  gt eggs 3  pred eggs 2
+990 IoU 0.85  gt eggs 2  pred eggs 2
+1040 IoU 0.85  gt eggs 2  pred eggs 2
+1090 IoU 0.87  gt eggs 2  pred eggs 2
+1140 IoU 0.61  gt eggs 3  pred eggs 2
+{'iou': 0.732, 'dice': 0.833, 'prec': 1.0, 'rec': 0.732, 'bf': 0.685, 'inst_f1': 0.877}
