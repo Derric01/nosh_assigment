@@ -36,6 +36,7 @@ P = dict(min_area=0.004, max_area=0.75,   # fraction of image area
          min_solidity=0.93,               # area / convex-hull area  (eggs are convex)
          min_ellipse_iou=0.88,            # how well a fitted ellipse explains the mask
          max_axis_ratio=2.0,              # eggs are not long thin things
+         max_sat=60, min_val=100,         # eggs here are white/cream: low mean HSV-S, high mean V (0-255)
          nms_iou=0.3, contain=0.8)
 
 
@@ -69,9 +70,9 @@ def egg_shape_stats(m):
     return sol, eiou, ax
 
 
-def select_eggs(masks, iou_pred, stab, p=P):
-    """Return list of clean egg masks (largest first)."""
-    H, W = masks.shape[1:]
+def select_eggs(masks, iou_pred, stab, p=P, rgb=None):
+    """Return list of clean egg masks (largest first). `rgb` enables the colour prior."""
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV) if rgb is not None else None
     cands = []
     for m, q, s in zip(masks, iou_pred, stab):
         m = _clean(m)
@@ -83,6 +84,8 @@ def select_eggs(masks, iou_pred, stab, p=P):
         sol, eiou, ax = egg_shape_stats(m)
         if sol < p["min_solidity"] or eiou < p["min_ellipse_iou"] or ax > p["max_axis_ratio"]:
             continue
+        if hsv is not None and (hsv[..., 1][m].mean() > p["max_sat"] or hsv[..., 2][m].mean() < p["min_val"]):
+            continue                          # skin / leaves / dark objects
         cands.append((eiou * sol * q, m))
     cands.sort(key=lambda t: -t[0])
     keep = []

@@ -12,7 +12,7 @@ for p in paths:
         continue          # SAM stage A has not reached this image yet
     rgb = data.load_rgb(p)
     masks, iou, stab = sam_seg.load_raw(f"outputs/sam_raw/{n}.npz")
-    keep = sam_seg.select_eggs(masks, iou, stab)
+    keep = sam_seg.select_eggs(masks, iou, stab, rgb=rgb)
     inst = sam_seg.to_instance_png(keep, rgb.shape[:2])
     cv2.imwrite(os.path.join(data.SAM_DIR, n + ".png"), inst)
     ov = viz.overlay(rgb, inst)
