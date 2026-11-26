@@ -119,7 +119,7 @@ and perceptual-hash distance {int(ev_g.x_phash.min())} bits, all on the safe sid
 
 ![Figure 1: example scene groups (each cluster of thumbnails is one group, at most 4 shown; grey border = dev, red border = eval)](figures/fig_groups.jpg)
 
-The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (`experiments/final_config.json`, frozen at commit `{FIN['frozen_at_parent_commit'][:8]}`).
+The eval split is evaluated once, in Section 4, after the algorithm was frozen on dev results (`experiments/final_config.json`, committed in `f16afde` before the eval split was run; its parent commit is `{FIN['frozen_at_parent_commit'][:8]}`).
 
 ## 2. Task 1 - segmentation with a pretrained model (SAM)
 
